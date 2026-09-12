@@ -1,0 +1,174 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --safe-bg-primary: #050b14;
+  --safe-bg-secondary: #0c1725;
+  --safe-panel: #111b2b;
+  --safe-border: #1f3147;
+  --safe-blue: #3b82f6;
+  --safe-success: #10b981;
+  --safe-warning: #f59e0b;
+  --safe-danger: #ef4444;
+  --safe-critical: #dc2626;
+  --safe-text-primary: #ffffff;
+  --safe-text-secondary: #a5b4c3;
+
+  --background: var(--safe-bg-primary);
+  --foreground: var(--safe-text-primary);
+  --card: color-mix(in srgb, var(--safe-panel) 88%, transparent);
+  --card-foreground: var(--safe-text-primary);
+  --popover: var(--safe-bg-secondary);
+  --popover-foreground: var(--safe-text-primary);
+  --primary: var(--safe-blue);
+  --primary-foreground: var(--safe-text-primary);
+  --secondary: var(--safe-bg-secondary);
+  --secondary-foreground: var(--safe-text-primary);
+  --muted: color-mix(in srgb, var(--safe-bg-secondary) 90%, transparent);
+  --muted-foreground: var(--safe-text-secondary);
+  --accent: color-mix(in srgb, var(--safe-blue) 14%, var(--safe-bg-secondary));
+  --accent-foreground: var(--safe-text-primary);
+  --destructive: var(--safe-danger);
+  --border: color-mix(in srgb, var(--safe-border) 88%, transparent);
+  --input: color-mix(in srgb, var(--safe-border) 72%, transparent);
+  --ring: var(--safe-blue);
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--safe-success);
+  --color-warning: var(--safe-warning);
+  --color-danger: var(--safe-danger);
+  --color-critical: var(--safe-critical);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: 0.01em;
+  }
+}
+
+@keyframes pipeline-flow {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(320%);
+    opacity: 0.2;
+  }
+}
+
+@keyframes status-blink {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes zone-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(220, 38, 38, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(220, 38, 38, 0.32);
+  }
+}
+
+@keyframes fan-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes heat-shimmer {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: translateY(-2px) scale(1.03);
+  }
+}
+
+@keyframes smoke-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.9);
+  }
+  40% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.15);
+  }
+}
+
+@layer utilities {
+  .animate-pipeline-flow {
+    animation: pipeline-flow 2.2s linear infinite;
+  }
+
+  .animate-status-blink {
+    animation: status-blink 1.6s ease-in-out infinite;
+  }
+
+  .animate-zone-glow {
+    animation: zone-glow 2s ease-in-out infinite;
+  }
+
+  .animate-fan-spin {
+    animation: fan-spin 3.6s linear infinite;
+  }
+
+  .animate-heat-shimmer {
+    animation: heat-shimmer 2.1s ease-in-out infinite;
+  }
+
+  .animate-smoke-rise {
+    animation: smoke-rise 2.8s ease-in-out infinite;
+  }
+}
