@@ -38,6 +38,7 @@ import {
 
 import { cn } from '@/utils/cn'
 import refineryStep25Bg from '@/assets/refinery-step25-bg.png'
+import { usePlantStore } from '@/store/usePlantStore'
 
 type Status = 'Healthy' | 'Warning' | 'Critical' | 'Maintenance' | 'Offline'
 
@@ -204,7 +205,7 @@ const bottomNav = [
   { label: 'Custom View', icon: LocateFixed },
 ]
 
-const zones: ZoneOverlay[] = [
+const visualZones: ZoneOverlay[] = [
   {
     id: 'ZONE A',
     name: 'Storage',
@@ -925,21 +926,8 @@ const sceneByCamera: Record<CameraPreset, SceneTransform> = {
   West: { x: 10, y: 0, scale: 1.14 },
 }
 
-const mockAlertTemplates: Array<{ severity: MockAlert['severity']; message: string; source: string }> = [
-  { severity: 'critical', message: 'High reactor temperature in Zone C', source: 'R-101' },
-  { severity: 'warning', message: 'Pressure spike detected on branch line', source: 'P-03' },
-  { severity: 'warning', message: 'Worker entered restricted hot-work lane', source: 'W-203' },
-  { severity: 'warning', message: 'Sensor heartbeat dropped below threshold', source: 'S-09' },
-  { severity: 'critical', message: 'Permit conflict in maintenance corridor', source: 'PZ-12' },
-  { severity: 'critical', message: 'Potential leak signature near valve block', source: 'VS-307' },
-]
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
-}
-
-function formatAgo(seconds: number) {
-  return `${Math.max(1, Math.round(seconds))} sec ago`
 }
 
 function getMarkerVisual(type: MarkerType) {
@@ -963,6 +951,28 @@ function formatNumber(value: number, unit: string) {
     return `${value}${unit}`
   }
   return `${value.toFixed(1)}${unit}`
+}
+
+function normalizeEquipmentStatus(status: string): Status {
+  if (status === 'Healthy' || status === 'Warning' || status === 'Critical' || status === 'Maintenance' || status === 'Offline') {
+    return status
+  }
+
+  return 'Offline'
+}
+
+function riskLabel(status: Status, health: number) {
+  if (status === 'Critical' || health < 70) return 'Critical'
+  if (status === 'Warning' || health < 85) return 'Elevated'
+  if (status === 'Maintenance') return 'Medium'
+  return 'Low'
+}
+
+function sensorMarkerPosition(position: { x: number; z: number }) {
+  return {
+    left: `${clamp(((position.x + 12) / 24) * 100, 4, 96)}%`,
+    top: `${clamp(((position.z + 7) / 14) * 100, 8, 92)}%`,
+  }
 }
 
 function HealthRing({ health, status }: { health: number; status: Status }) {
@@ -1195,10 +1205,80 @@ export function DigitalTwinViewport({
     hydrants: true,
     assembly: true,
   })
-  const [liveEquipment, setLiveEquipment] = useState<Equipment[]>(equipmentData)
-  const [liveMarkers, setLiveMarkers] = useState<Marker[]>(markers)
+  const backendEquipment = usePlantStore((state) => state.equipment)
+  const backendSensors = usePlantStore((state) => state.sensors)
+  const backendZones = usePlantStore((state) => state.zones)
+  const riskScores = usePlantStore((state) => state.riskScores)
+  const explanation = usePlantStore((state) => state.explanation)
+  const recommendations = usePlantStore((state) => state.recommendations)
+
+  const liveEquipment = useMemo<Equipment[]>(() => backendEquipment.map((item) => {
+    const visual = equipmentData.find((entry) => entry.id === item.id)
+    if (!visual) return null
+
+    const status = normalizeEquipmentStatus(item.status)
+    return {
+      ...visual,
+      name: item.name,
+      type: item.type as EquipmentType,
+      zone: item.zoneId,
+      status,
+      health: item.health,
+      risk: riskLabel(status, item.health),
+      temperature: item.temperature,
+      pressure: item.pressure,
+      flow: item.flow,
+      gas: item.gas,
+      humidity: item.humidity,
+      vibration: item.vibration,
+      workersNearby: item.workersNearby,
+      rootCause: item.rootCause || visual.rootCause,
+      recommendation: item.recommendation || visual.recommendation,
+      failureWindow: item.failureWindow,
+      lastUpdated: 'just now',
+    }
+  }).filter((item): item is Equipment => item !== null), [backendEquipment])
+
+  const liveMarkers = useMemo<Marker[]>(() => {
+    const visualMarkers = markers.filter((marker) => marker.type !== 'sensor')
+    const sensorMarkers = backendSensors.map((sensor) => {
+      const position = sensorMarkerPosition(sensor.position)
+      const value = formatNumber(sensor.value, ` ${sensor.unit}`)
+      return {
+        id: `sensor-${sensor.id}`,
+        type: 'sensor' as const,
+        left: position.left,
+        top: position.top,
+        zone: sensor.zoneId,
+          status: sensor.value < sensor.normalMin || sensor.value > sensor.normalMax ? 'Warning' as Status : 'Healthy' as Status,
+        data: {
+          id: sensor.id,
+          type: sensor.type,
+          reading: value,
+          status: sensor.value < sensor.normalMin || sensor.value > sensor.normalMax ? 'Elevated' : 'Nominal',
+          value,
+          updated: 'just now',
+        },
+      }
+    })
+
+    return [...visualMarkers, ...sensorMarkers]
+  }, [backendSensors])
+  const liveZones = useMemo(() => backendZones.map((zone, index) => {
+    const visual = visualZones.find((entry) => entry.id === zone.id) ?? visualZones[index]
+    const risk = zone.riskScore
+    return {
+      ...visual,
+      id: zone.id,
+      name: zone.name,
+      cri: risk,
+      risk: risk >= 80 ? 'Critical Risk' : risk >= 60 ? 'High Risk' : risk >= 40 ? 'Elevated Risk' : 'Low Risk',
+      status: risk >= 80 ? 'Critical' : risk >= 60 ? 'Watch' : 'Nominal',
+      tone: risk >= 80 ? 'border-critical/55 bg-critical/20 animate-zone-glow' : risk >= 60 ? 'border-warning/45 bg-warning/18' : 'border-success/40 bg-success/15',
+      chipTone: risk >= 80 ? 'text-critical' : risk >= 60 ? 'text-warning' : 'text-success',
+    }
+  }), [backendZones])
   const [activeAlert, setActiveAlert] = useState<MockAlert | null>(null)
-  const [telemetryTick, setTelemetryTick] = useState(0)
 
   const selectedZone = controlledZone === 'All Zones' ? null : controlledZone
   const setSelectedZone = (zone: string | null) => onZoneChange(zone ?? 'All Zones')
@@ -1238,138 +1318,6 @@ export function DigitalTwinViewport({
     setCameraPreset(preset)
     applySceneTransform(sceneByCamera[preset])
   }, [applySceneTransform])
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const tick = () => {
-      setTelemetryTick((prev) => prev + 1)
-
-      setLiveEquipment((prev) =>
-        prev.map((equipment) => {
-          const temperature = clamp(equipment.temperature + (Math.random() - 0.5) * 6, 0, 500)
-          const pressure = clamp(equipment.pressure + (Math.random() - 0.5) * 0.35, 0, 22)
-          const flow = clamp(equipment.flow + (Math.random() - 0.5) * 4, 0, 100)
-          const gas = clamp(equipment.gas + (Math.random() - 0.5) * 2, 0, 80)
-          const power = clamp(equipment.power + (Math.random() - 0.5) * 3, 0, 100)
-          const humidity = clamp(equipment.humidity + (Math.random() - 0.5) * 2.8, 0, 100)
-          const vibration = clamp(equipment.vibration + (Math.random() - 0.5) * 0.15, 0, 5)
-          const health = clamp(equipment.health + (Math.random() - 0.5) * 1.8, 50, 100)
-
-          const autoStatus: Status = temperature > 410 || gas > 35
-            ? 'Critical'
-            : temperature > 280 || pressure > 12
-              ? 'Warning'
-              : equipment.status === 'Offline'
-                ? 'Offline'
-                : equipment.status === 'Maintenance'
-                  ? 'Maintenance'
-                  : 'Healthy'
-
-          const autoRisk = autoStatus === 'Critical'
-            ? 'Critical'
-            : autoStatus === 'Warning'
-              ? 'Elevated'
-              : autoStatus === 'Maintenance'
-                ? 'Medium'
-                : 'Low'
-
-          const recommendation = autoStatus === 'Critical'
-            ? 'Reduce process load, inspect cooling loop, and isolate unstable branch valve'
-            : autoStatus === 'Warning'
-              ? 'Stabilize pressure profile and schedule predictive maintenance check'
-              : equipment.recommendation
-
-          const confidence = autoStatus === 'Critical' ? '94%' : autoStatus === 'Warning' ? '88%' : equipment.confidence
-
-          return {
-            ...equipment,
-            status: autoStatus,
-            risk: autoRisk,
-            health,
-            temperature,
-            pressure,
-            flow,
-            gas,
-            humidity,
-            power,
-            vibration,
-            recommendation,
-            confidence,
-            lastUpdated: 'just now',
-          }
-        }),
-      )
-
-      setLiveMarkers((prev) =>
-        prev.map((marker) => {
-          if (marker.type !== 'sensor') {
-            return {
-              ...marker,
-              data: {
-                ...marker.data,
-                updated: marker.type === 'camera' ? formatAgo(2 + Math.random() * 8) : marker.data.updated,
-              },
-            }
-          }
-
-          const isThermal = marker.data.type?.toLowerCase().includes('temperature')
-          const readingValue = isThermal
-            ? `${(86 + Math.random() * 9).toFixed(1)} C`
-            : `${(6 + Math.random() * 1.3).toFixed(1)} bar`
-          const temperatureValue = `${(72 + Math.random() * 24).toFixed(1)} C`
-          const pressureValue = `${(5.4 + Math.random() * 2.2).toFixed(1)} bar`
-          const humidityValue = `${Math.round(40 + Math.random() * 22)}%`
-          const battery = clamp(Number.parseInt(marker.data.battery ?? '80', 10) + (Math.random() > 0.6 ? -1 : 0), 58, 99)
-          const signal = -52 - Math.round(Math.random() * 14)
-          const status: Status = isThermal
-            ? Number.parseFloat(readingValue) > 92
-              ? 'Warning'
-              : 'Healthy'
-            : Number.parseFloat(readingValue) > 7
-              ? 'Warning'
-              : 'Healthy'
-
-          return {
-            ...marker,
-            status,
-            data: {
-              ...marker.data,
-              reading: readingValue,
-              status: status === 'Warning' ? 'Elevated' : 'Nominal',
-              temperature: temperatureValue,
-              pressure: pressureValue,
-              humidity: humidityValue,
-              battery: `${battery}%`,
-              signal: `${signal} dBm`,
-              updated: 'just now',
-            },
-          }
-        }),
-      )
-
-      if (Math.random() > 0.55) {
-        const template = mockAlertTemplates[Math.floor(Math.random() * mockAlertTemplates.length)]
-        setActiveAlert({
-          id: `ALT-${Math.floor(100 + Math.random() * 900)}`,
-          severity: template.severity,
-          message: template.message,
-          source: template.source,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        })
-      }
-
-      timer = window.setTimeout(tick, 5000 + Math.floor(Math.random() * 5000))
-    }
-
-    timer = window.setTimeout(tick, 5400)
-
-    return () => {
-      if (timer) {
-        window.clearTimeout(timer)
-      }
-    }
-  }, [applyCameraPreset])
 
   useEffect(() => {
     if (!activeAlert) {
@@ -1493,19 +1441,16 @@ export function DigitalTwinViewport({
       return null
     }
 
-    const phase = telemetryTick % 10
-    const jitter = (phase - 5) * 0.16
-
     return {
-      temperature: Math.max(0, selectedEquipment.temperature + jitter * 2.4),
-      pressure: Math.max(0, selectedEquipment.pressure + jitter * 0.08),
-      flow: Math.max(0, selectedEquipment.flow + jitter * 1.2),
-      gas: Math.max(0, selectedEquipment.gas + jitter * 0.4),
-      humidity: Math.max(0, selectedEquipment.humidity + jitter * 0.5),
-      power: Math.max(0, selectedEquipment.power + jitter * 0.9),
-      vibration: Math.max(0, selectedEquipment.vibration + jitter * 0.04),
+      temperature: selectedEquipment.temperature,
+      pressure: selectedEquipment.pressure,
+      flow: selectedEquipment.flow,
+      gas: selectedEquipment.gas,
+      humidity: selectedEquipment.humidity,
+      power: selectedEquipment.power,
+      vibration: selectedEquipment.vibration,
     }
-  }, [selectedEquipment, telemetryTick])
+  }, [selectedEquipment])
 
   const breadcrumb = useMemo(() => {
     if (selectedEquipment) {
@@ -1556,14 +1501,14 @@ export function DigitalTwinViewport({
     }
 
     return {
-      plantHealth: '76%',
-      riskSummary: 'Balanced',
+      plantHealth: `${riskScores.cri}% CRI`,
+      riskSummary: riskScores.cri >= 80 ? 'Critical' : riskScores.cri >= 60 ? 'High' : 'Monitored',
       aiInsight: activeAlert
         ? `AI response: ${activeAlert.message}. Source ${activeAlert.source}.`
-        : 'Select equipment for contextual operational intelligence',
-      alerts: activeAlert ? `${activeAlert.severity.toUpperCase()} @ ${activeAlert.timestamp}` : '3 active alerts',
+        : explanation.text,
+      alerts: activeAlert ? `${activeAlert.severity.toUpperCase()} @ ${activeAlert.timestamp}` : `${recommendations.length} backend recommendations`,
     }
-  }, [activeAlert, selectedEquipment, selectedPipeline, selectedMarker])
+  }, [activeAlert, explanation.text, recommendations.length, riskScores.cri, selectedEquipment, selectedPipeline, selectedMarker])
 
   const visibleEquipment = useMemo(() => {
     if (viewMode === 'Sensor View') {
@@ -2050,7 +1995,7 @@ export function DigitalTwinViewport({
           )
         })}
 
-        {zones.map((zone) => (
+        {liveZones.map((zone) => (
           <div
             key={zone.id}
             role="button"

@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { usePlantStore } from '@/store/usePlantStore'
+import { usePlantSimulation } from '@/modules/situationRoom/hooks/usePlantSimulation'
+import { riskLevelFromScore } from '@/data/plant/types'
 
 import { DEFAULT_SCENARIO_META, DEFAULT_SIMULATION_CONTROLS } from '../services/simulationScenarios'
 import { levelLabel, runDecisionSimulation } from '../services/simulationEngine'
@@ -20,10 +22,17 @@ function baselineSnapshot(snapshot: SimulationSnapshot): SimulationSnapshot {
 }
 
 export function useDecisionSimulation() {
+  usePlantSimulation(true)
+
   const plantName = usePlantStore((s) => s.plantName)
   const equipment = usePlantStore((s) => s.equipment)
   const sensors = usePlantStore((s) => s.sensors)
   const zones = usePlantStore((s) => s.zones)
+  const riskScores = usePlantStore((s) => s.riskScores)
+  const riskContributors = usePlantStore((s) => s.riskContributors)
+  const recommendations = usePlantStore((s) => s.recommendations)
+  const explanation = usePlantStore((s) => s.explanation)
+  const forecast = usePlantStore((s) => s.forecast)
 
   const [controls, setControls] = useState<SimulationControls>(DEFAULT_SIMULATION_CONTROLS)
   const [runResult, setRunResult] = useState<SimulationRunResult | null>(null)
@@ -36,8 +45,15 @@ export function useDecisionSimulation() {
       baselineSensors: sensors,
       baselineZones: zones,
     })
-    return baselineSnapshot(computed.before)
-  }, [equipment, sensors, zones])
+    return baselineSnapshot({
+      ...computed.before,
+      riskScores,
+      riskContributors,
+      recommendations,
+      explanation,
+      forecast,
+    })
+  }, [equipment, explanation, forecast, recommendations, riskContributors, riskScores, sensors, zones])
 
   const afterResult = runResult?.after ?? null
 
@@ -46,7 +62,7 @@ export function useDecisionSimulation() {
     focusArea: DEFAULT_SCENARIO_META.focusArea,
     primaryRisk: DEFAULT_SCENARIO_META.primaryRisk,
     currentCri: beforeResult.riskScores.cri,
-    currentCriLevel: beforeResult.metrics.predictedIncidents,
+    currentCriLevel: riskLevelFromScore(riskScores.cri),
   }), [beforeResult.metrics.predictedIncidents, beforeResult.riskScores.cri])
 
   const controlValues = useMemo(() => ({

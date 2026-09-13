@@ -46,6 +46,15 @@ export function EmergencyModeLayout() {
     pressure,
     vibration,
     gas,
+    riskLevel,
+    riskScores,
+    overview,
+    recommendations,
+    highestRiskZone,
+    affectedEquipment,
+    backendConnected,
+    backendError,
+    isLoading,
     alertState,
     timerDisplay,
     responseActions,
@@ -132,7 +141,7 @@ export function EmergencyModeLayout() {
           <div className="rounded border border-border/70 bg-background/40 px-2 py-1.5">
             <span className="text-slate-400">{currentDate}</span> {currentTime}
           </div>
-          <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-red-300">System Status: EMERGENCY</div>
+          <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-red-300">System Status: {isLoading ? 'LOADING' : backendConnected ? riskLevel.toUpperCase() : backendError ? 'UNAVAILABLE' : 'CONNECTING'}</div>
           <button type="button" title="Alerts and notifications" onClick={() => navigateTo('Alerts & Notifications')} className="flex size-8 items-center justify-center rounded-md border border-border/70 bg-background/40 text-slate-300 hover:text-white">
             <Bell className="size-3.5" />
           </button>
@@ -160,16 +169,16 @@ export function EmergencyModeLayout() {
               <AlertTriangle className="size-5" />
             </div>
             <div>
-              <div className="text-[16px] font-bold uppercase tracking-[0.14em] text-red-200">CRITICAL EMERGENCY ACTIVE</div>
-              <div className="text-[11px] text-red-100/90">High Temperature in Reactor R-101</div>
-              <div className="text-[10px] text-red-100/80">Zone C - Hot Work Area</div>
+              <div className="text-[16px] font-bold uppercase tracking-[0.14em] text-red-200">{riskLevel.toUpperCase()} RISK CONDITION</div>
+              <div className="text-[11px] text-red-100/90">CRI {riskScores.cri} · {affectedEquipment?.id ?? 'Equipment unavailable'}</div>
+              <div className="text-[10px] text-red-100/80">{highestRiskZone?.label ?? 'Affected zone unavailable'}</div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[9px] uppercase tracking-[0.12em] text-red-100/80 md:grid-cols-5">
             <div>
               <div className="text-red-200/70">Alert Level</div>
-              <div className="mt-1 text-[13px] font-bold tracking-[0.1em] text-red-300">CRITICAL</div>
+              <div className="mt-1 text-[13px] font-bold tracking-[0.1em] text-red-300">{riskLevel.toUpperCase()}</div>
             </div>
             <div>
               <div className="text-red-200/70">Since</div>
@@ -181,7 +190,7 @@ export function EmergencyModeLayout() {
             </div>
             <div>
               <div className="text-red-200/70">Affected Area</div>
-              <div className="mt-1 text-[12px] font-bold text-red-300">Zone C</div>
+              <div className="mt-1 text-[12px] font-bold text-red-300">{highestRiskZone?.id ?? 'Unavailable'}</div>
             </div>
             <div>
               <div className="text-red-200/70">Lives at Risk</div>
@@ -195,7 +204,7 @@ export function EmergencyModeLayout() {
         <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
           <Panel className="border-red-500/30 bg-slate-950/70 p-0">
             <div className="flex items-center justify-between border-b border-red-500/30 px-3 py-2">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">LIVE EMERGENCY MAP (ZONE C)</div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">LIVE EMERGENCY MAP ({highestRiskZone?.id ?? 'UNAVAILABLE'})</div>
               <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] text-slate-300">
                 <button type="button" onClick={() => setMapView('3D')} className={cn('rounded border border-border/70 bg-background/40 px-2 py-1', mapView === '3D' && 'border-red-400/60 bg-red-500/15 text-red-200')}>3D</button>
                 <button type="button" onClick={() => setMapView('2D')} className={cn('rounded border border-border/70 bg-background/40 px-2 py-1', mapView === '2D' && 'border-red-400/60 bg-red-500/15 text-red-200')}>2D</button>
@@ -216,8 +225,8 @@ export function EmergencyModeLayout() {
               <div className="absolute left-[62%] top-[52%] h-14 w-14 rounded-md border border-slate-500/70 bg-slate-800/70 shadow-[inset_0_0_20px_rgba(148,163,184,0.12)]" />
               <div className="absolute left-[50%] top-[45%] h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-red-500/60 bg-red-600/25 shadow-[0_0_42px_rgba(239,68,68,0.42)]" />
               <div className="absolute left-[50%] top-[45%] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1 rounded-md border border-red-500/50 bg-red-500/15 px-3 py-2 text-center shadow-[0_0_26px_rgba(239,68,68,0.4)]">
-                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-red-200">R-101</span>
-                <span className="text-[11px] font-bold text-red-300">92°C</span>
+                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-red-200">{affectedEquipment?.id ?? 'N/A'}</span>
+                <span className="text-[11px] font-bold text-red-300">{temperature}°C</span>
               </div>
 
               <div className="absolute inset-x-[16%] bottom-[18%] h-14 rounded-full border border-red-500/35 bg-red-500/10 blur-md" />
@@ -270,19 +279,19 @@ export function EmergencyModeLayout() {
               <div className="grid flex-1 gap-2 text-[10px]">
                 <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
                   <span className="text-slate-400">Total Head Count</span>
-                  <span className="font-bold text-white">356</span>
+                  <span className="font-bold text-white">{overview.onSiteWorkers}</span>
                 </div>
                 <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
                   <span className="text-slate-400">Evacuated</span>
-                  <span className="font-bold text-emerald-300">{Math.round(356 * alertState.evacuationPercent / 100)}</span>
+                  <span className="font-bold text-emerald-300">Unavailable</span>
                 </div>
                 <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
                   <span className="text-slate-400">Remaining</span>
-                  <span className="font-bold text-amber-300">{356 - Math.round(356 * alertState.evacuationPercent / 100)}</span>
+                  <span className="font-bold text-amber-300">Unavailable</span>
                 </div>
                 <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
                   <span className="text-slate-400">Assembly Points</span>
-                  <span className="font-bold text-red-300">3 / 5</span>
+                  <span className="font-bold text-red-300">Unavailable</span>
                 </div>
               </div>
             </div>
@@ -327,7 +336,7 @@ export function EmergencyModeLayout() {
                 ['Lives at Risk', 'High', 'text-red-300'],
                 ['Potential Explosion', 'High', 'text-red-300'],
                 ['Environmental Impact', 'Severe', 'text-amber-300'],
-                ['Operational Impact', 'Severe', 'text-amber-300'],
+                ['Active Recommendations', `${recommendations.length}`, 'text-amber-300'],
               ].map(([label, value, color]) => (
                 <div key={label} className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
                   <span className="text-slate-400">{label}</span>

@@ -2,20 +2,33 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { usePlantStore } from '@/store/usePlantStore'
 import type { EmergencyAlertState, ResponseAction, TeamCategory } from '@/modules/emergency/services/emergencyTypes'
+import { usePlantSimulation } from '@/modules/situationRoom/hooks/usePlantSimulation'
+import { riskLevelFromScore, riskLevelLabel } from '@/data/plant/types'
 
 export function useEmergencyMode() {
+  usePlantSimulation(true)
+
   const plantName = usePlantStore((state) => state.plantName)
   const equipment = usePlantStore((state) => state.equipment)
   const sensors = usePlantStore((state) => state.sensors)
+  const zones = usePlantStore((state) => state.zones)
   const telemetryContext = usePlantStore((state) => state.telemetryContext)
   const riskScores = usePlantStore((state) => state.riskScores)
+  const riskContributors = usePlantStore((state) => state.riskContributors)
+  const recommendations = usePlantStore((state) => state.recommendations)
   const overview = usePlantStore((state) => state.overview)
+  const backendConnected = usePlantStore((state) => state.backendConnected)
+  const backendError = usePlantStore((state) => state.backendError)
+  const isLoading = usePlantStore((state) => state.isLoading)
 
   const r101 = equipment.find((item) => item.id === 'R-101') ?? equipment[0]
   const tempSensor = sensors.find((sensor) => sensor.equipmentId === 'R-101' && sensor.type === 'temperature')
   const pressureSensor = sensors.find((sensor) => sensor.equipmentId === 'R-101' && sensor.type === 'pressure')
   const gasSensor = sensors.find((sensor) => sensor.equipmentId === 'R-101' && sensor.type === 'gas')
   const vibrationSensor = sensors.find((sensor) => sensor.equipmentId === 'R-101' && sensor.type === 'vibration')
+  const riskLevel = riskLevelFromScore(riskScores.cri)
+  const highestRiskZone = zones.reduce((highest, zone) => !highest || zone.riskScore > highest.riskScore ? zone : highest, zones[0])
+  const affectedEquipment = equipment.find((item) => item.status === 'Critical') ?? equipment.find((item) => item.status === 'Warning') ?? r101
 
   const [alertState, setAlertState] = useState<EmergencyAlertState>({
     sirensActive: true,
@@ -54,32 +67,30 @@ export function useEmergencyMode() {
   const pressureValue = Number((pressureSensor?.value ?? r101?.pressure ?? 0).toFixed(1))
   const vibrationValue = Number((vibrationSensor?.value ?? r101?.vibration ?? 0).toFixed(1))
   const gasValue = Math.round(gasSensor?.value ?? r101?.gas ?? 0)
-  const emergencySince = '10:18 AM'
+  const emergencySince = backendConnected ? 'LIVE' : 'UNAVAILABLE'
   const durationDisplay = '00:06:23'
 
   const teamCategories: TeamCategory[] = [
-    { id: 'fire', label: 'Fire Team', count: 12, tone: 'text-red-300' },
-    { id: 'medical', label: 'Medical Team', count: 8, tone: 'text-emerald-300' },
-    { id: 'safety', label: 'Safety Team', count: 15, tone: 'text-cyan-300' },
-    { id: 'maintenance', label: 'Maintenance', count: 10, tone: 'text-amber-300' },
+    { id: 'personnel', label: 'On-Site Personnel', count: overview.onSiteWorkers, tone: 'text-cyan-300' },
   ]
 
-  const sensorTrend = [
-    { name: '00:00', temperature: 76, pressure: 5.1, vibration: 5.4, gas: 52 },
-    { name: '02:00', temperature: 80, pressure: 5.4, vibration: 5.8, gas: 58 },
-    { name: '04:00', temperature: 84, pressure: 5.7, vibration: 6.1, gas: 64 },
-    { name: '06:00', temperature: 88, pressure: 5.9, vibration: 6.4, gas: 70 },
-    { name: '08:00', temperature: 91, pressure: 6.2, vibration: 6.7, gas: 75 },
-    { name: '10:00', temperature: 92, pressure: 6.5, vibration: 7.2, gas: 85 },
-  ]
+  const sensorTrend = Array.from({ length: 6 }, (_, index) => {
+    const historyIndex = Math.max(0, (tempSensor?.history.length ?? 1) - 6 + index)
+    const valueAt = (sensor: typeof tempSensor) => sensor?.history[historyIndex] ?? sensor?.value ?? 0
+    return {
+      name: `T-${5 - index}`,
+      temperature: valueAt(tempSensor),
+      pressure: valueAt(pressureSensor),
+      vibration: valueAt(vibrationSensor),
+      gas: valueAt(gasSensor),
+    }
+  })
 
-  const timeline = [
-    { time: '10:18 AM', text: 'High temperature detected in R-101', status: 'critical' },
-    { time: '10:18 AM', text: 'Automatic alert triggered', status: 'critical' },
-    { time: '10:19 AM', text: 'Field team notified', status: 'active' },
-    { time: '10:20 AM', text: 'Evacuation initiated in Zone C', status: 'active' },
-    { time: '10:21 AM', text: 'Shutdown sequence started', status: 'warning' },
-  ]
+  const timeline = riskContributors.slice(0, 5).map((item) => ({
+    time: 'LIVE',
+    text: `${item.factor} risk contributor detected (${item.value})`,
+    status: item.trend === 'up' ? 'critical' : 'active',
+  }))
 
   const mapLegend = [
     'Incident Location',
@@ -132,6 +143,15 @@ export function useEmergencyMode() {
     overview,
     telemetryContext,
     riskScores,
+    riskLevel: riskLevelLabel(riskLevel),
+    riskContributors,
+    recommendations,
+    zones,
+    highestRiskZone,
+    affectedEquipment,
+    backendConnected,
+    backendError,
+    isLoading,
     temperature: currentTemperature,
     pressure: pressureValue,
     vibration: vibrationValue,

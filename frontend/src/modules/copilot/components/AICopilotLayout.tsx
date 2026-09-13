@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   Bell,
   Bot,
@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { Panel } from '@/components/cards/Panel'
 import { riskLevelFromScore, riskLevelLabel } from '@/data/plant/types'
 import { usePlantStore } from '@/store/usePlantStore'
+import { usePlantSimulation } from '@/modules/situationRoom/hooks/usePlantSimulation'
 import { cn } from '@/utils/cn'
 
 type Message = {
@@ -91,8 +92,16 @@ function getRiskTone(level: string) {
 
 function buildCopilotReply(query: string, context: {
   cri: number
+  pri: number
+  eri: number
+  sri: number
   temperature: number
+  reactorId: string
   riskLevel: string
+  abnormalSensors: string
+  highestRiskZone: string
+  highestRiskZoneScore: number
+  concerningEquipment: string
   activeIncidents: number
   weather: number
   permits: number
@@ -103,19 +112,29 @@ function buildCopilotReply(query: string, context: {
   const text = query.toLowerCase()
 
   if (text.includes('risk') || text.includes('main risk') || text.includes('current risk')) {
-    return `The main current risk is concentrated in Reactor Unit R-101. The CRI is ${context.cri}, classified as ${context.riskLevel.toUpperCase()}, with a temperature of ${Math.round(context.temperature)}°C and elevated thermal stress in the hot work zone.`
+    return `Current plant risk is ${context.riskLevel.toUpperCase()}. CRI is ${context.cri}, PRI ${context.pri}, ERI ${context.eri}, and SRI ${context.sri}. The highest-risk zone is ${context.highestRiskZone} at ${context.highestRiskZoneScore}, with ${context.concerningEquipment} requiring the closest review.`
   }
 
   if (text.includes('r-101') || text.includes('temperature')) {
-    return `R-101 is running at ${Math.round(context.temperature)}°C, which is above the normal operating envelope and remains the primary thermal risk in the plant. The current trajectory indicates sustained overheating and a narrow response window.`
+    return `${context.reactorId} is currently at ${Math.round(context.temperature)}°C according to live equipment state. Review the associated sensor readings and active recommendations before taking action.`
   }
 
   if (text.includes('incident') || text.includes('active incidents')) {
-    return `${context.activeIncidents} active incidents are currently tracked, with the most significant being ${context.incidentTitle}. The current forecast remains elevated due to thermal drift and concurrent permit activity.`
+    return `No dedicated incident model is available in the current backend context. The store reports ${context.activeIncidents} critical equipment condition(s); the closest historical match is ${context.incidentTitle}.`
   }
 
   if (text.includes('zone') || text.includes('high risk') || text.includes('risk zones')) {
-    return `The highest-risk zone is Zone C — Hot Work, where R-101 sits. Secondary concern includes processing areas with active permit overlap and elevated thermal exposure.`
+    return `The highest current zone risk is ${context.highestRiskZone} at ${context.highestRiskZoneScore}. This value is derived from the current shared plant state; review ${context.concerningEquipment} and abnormal sensors: ${context.abnormalSensors}.`
+  }
+
+  if (text.includes('sensor') || text.includes('abnormal')) {
+    return context.abnormalSensors === 'none'
+      ? 'No sensors are currently outside their configured normal ranges in the shared plant state.'
+      : `Sensors currently outside their configured ranges: ${context.abnormalSensors}.`
+  }
+
+  if (text.includes('equipment') || text.includes('asset') || text.includes('condition')) {
+    return `The equipment requiring the closest review is ${context.concerningEquipment}. Its current state is taken from live shared equipment data.`
   }
 
   if (text.includes('action') || text.includes('reduce') || text.includes('risk reduction')) {
@@ -123,11 +142,11 @@ function buildCopilotReply(query: string, context: {
   }
 
   if (text.includes('permit') || text.includes('permits')) {
-    return `${context.permits} permits are active in the current operating window, with permit overlap and hot-work controls presenting additional risk exposure near R-101.`
+    return `The current store exposes ${context.permits} active permit reference(s) from zone metadata. A dedicated backend permit model is not available, so permit status and conflicts cannot be verified here.`
   }
 
   if (text.includes('weather') || text.includes('wind')) {
-    return `Current weather is contributing a moderate risk multiplier. Wind is at ${context.weather} km/h, which increases spread potential and operational sensitivity in hot work and process areas.`
+    return `The current shared telemetry context reports wind at ${context.weather} km/h. No separate authoritative weather service is connected to the Copilot.`
   }
 
   if (text.includes('similar') || text.includes('past incident') || text.includes('incident history')) {
@@ -135,7 +154,7 @@ function buildCopilotReply(query: string, context: {
   }
 
   if (text.includes('report') || text.includes('summary')) {
-    return `The current safety summary is critical: CRI ${context.cri}, Reactor R-101 at ${Math.round(context.temperature)}°C, ${context.activeIncidents} active incidents, and ${context.permits} active permits. Prioritize cooling, hot-work controls, and permit coordination.`
+    return `Current safety summary: ${context.riskLevel.toUpperCase()} risk with CRI ${context.cri}, PRI ${context.pri}, ERI ${context.eri}, SRI ${context.sri}, and ${context.reactorId} at ${Math.round(context.temperature)}°C. Prioritize ${context.recommendations.join('; ') || 'reviewing active backend recommendations'}.`
   }
 
   if (text.includes('cri') || text.includes('current cri')) {
@@ -146,19 +165,21 @@ function buildCopilotReply(query: string, context: {
 }
 
 export function AICopilotLayout() {
-  const initialize = usePlantStore((state) => state.initialize)
+  usePlantSimulation(true)
   const plantName = usePlantStore((state) => state.plantName)
   const equipment = usePlantStore((state) => state.equipment)
+  const sensors = usePlantStore((state) => state.sensors)
+  const zones = usePlantStore((state) => state.zones)
   const riskScores = usePlantStore((state) => state.riskScores)
+  const riskContributors = usePlantStore((state) => state.riskContributors)
   const overview = usePlantStore((state) => state.overview)
   const forecast = usePlantStore((state) => state.forecast)
   const recommendations = usePlantStore((state) => state.recommendations)
   const patternMatch = usePlantStore((state) => state.patternMatch)
   const telemetryContext = usePlantStore((state) => state.telemetryContext)
-
-  useEffect(() => {
-    initialize()
-  }, [initialize])
+  const backendConnected = usePlantStore((state) => state.backendConnected)
+  const backendError = usePlantStore((state) => state.backendError)
+  const isLoading = usePlantStore((state) => state.isLoading)
 
   const [inputValue, setInputValue] = useState('')
   const [attachedFiles, setAttachedFiles] = useState<string[]>([])
@@ -173,14 +194,35 @@ export function AICopilotLayout() {
   ])
 
   const reactor = useMemo(() => equipment.find((item) => item.id === 'R-101'), [equipment])
+  const concerningEquipment = useMemo(
+    () => equipment.find((item) => item.status === 'Critical') ?? equipment.find((item) => item.status === 'Warning') ?? equipment[0],
+    [equipment],
+  )
+  const highestRiskZone = useMemo(
+    () => zones.reduce((highest, zone) => zone.riskScore > highest.riskScore ? zone : highest, zones[0]),
+    [zones],
+  )
+  const abnormalSensors = useMemo(
+    () => sensors.filter((sensor) => sensor.value < sensor.normalMin || sensor.value > sensor.normalMax).map((sensor) => `${sensor.id} (${sensor.value} ${sensor.unit})`).join(', ') || 'none',
+    [sensors],
+  )
+  const topContributor = riskContributors[0]
   const riskLevel = riskLevelFromScore(riskScores.cri)
   const riskTone = getRiskTone(riskLevel)
 
   const replyContext = useMemo(
     () => ({
       cri: riskScores.cri,
+      pri: riskScores.pri,
+      eri: riskScores.eri,
+      sri: riskScores.sri,
       temperature: reactor?.temperature ?? 0,
+      reactorId: reactor?.id ?? 'R-101',
       riskLevel: riskLevelLabel(riskLevel),
+      abnormalSensors,
+      highestRiskZone: highestRiskZone?.label ?? 'Unavailable',
+      highestRiskZoneScore: highestRiskZone?.riskScore ?? 0,
+      concerningEquipment: concerningEquipment?.id ?? 'Unavailable',
       activeIncidents: overview.openIncidents,
       weather: telemetryContext.weatherWind,
       permits: overview.activePermits,
@@ -188,7 +230,7 @@ export function AICopilotLayout() {
       incidentTitle: patternMatch.incident.title || 'Reactor thermal excursion',
       similarIncident: patternMatch.incident.title || 'Thermal drift at reactor manifold',
     }),
-    [overview, patternMatch, recommendations, reactor, riskLevel, riskScores, telemetryContext],
+    [abnormalSensors, concerningEquipment, highestRiskZone, overview, patternMatch, recommendations, reactor, riskLevel, riskScores, telemetryContext],
   )
 
   const handleSend = (queryOverride?: string) => {
@@ -265,7 +307,7 @@ export function AICopilotLayout() {
             <span className="inline-flex h-7 items-center rounded-md border border-border/80 bg-background/60 px-2 text-[10px] text-muted-foreground">
               {headerDate} {headerTime}
             </span>
-            <StatusBadge label="Operational" variant="stable" />
+            <StatusBadge label={isLoading ? 'Loading Context' : backendConnected ? 'Backend Live' : backendError ? 'Context Unavailable' : 'Connecting'} variant={backendConnected ? 'active' : 'offline'} />
             <button type="button" title="Search" onClick={focusGlobalSearch} className="inline-flex size-7 items-center justify-center rounded-md border border-border/80 bg-background/60 text-muted-foreground hover:text-foreground">
               <Search className="size-3.5" />
             </button>
@@ -327,7 +369,7 @@ export function AICopilotLayout() {
                   <div className="text-[9px] uppercase tracking-[0.14em] text-primary">AI Response</div>
                 </div>
                 <p className="text-[10px] leading-5 text-foreground/90">
-                  The principal risk is in Reactor Unit R-101, where {Math.round(reactor?.temperature ?? 0)}°C operating temperature and elevated gas conditions indicate escalating thermal stress. The current CRI is {riskScores.cri}, and the hot-work zone is experiencing the highest risk concentration.
+                  The current plant risk is {riskLevelLabel(riskLevel).toUpperCase()} with CRI {riskScores.cri}. {topContributor?.factor ?? 'No risk contributor'} is the leading backend risk contributor, and {highestRiskZone?.label ?? 'no zone'} has the highest current zone score.
                 </p>
               </div>
             </Panel>
@@ -391,15 +433,15 @@ export function AICopilotLayout() {
                   </div>
                   <div className="flex items-center justify-between gap-2 rounded border border-border/60 bg-background/35 px-2 py-1">
                     <span className="text-muted-foreground">Primary Risk</span>
-                    <span className="font-semibold text-foreground">Thermal Drift</span>
+                    <span className="font-semibold text-foreground">{topContributor?.factor ?? 'Unavailable'}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2 rounded border border-border/60 bg-background/35 px-2 py-1">
                     <span className="text-muted-foreground">Secondary Risk</span>
-                    <span className="font-semibold text-foreground">Gas Accumulation</span>
+                    <span className="font-semibold text-foreground">{riskContributors[1]?.factor ?? 'Unavailable'}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2 rounded border border-border/60 bg-background/35 px-2 py-1">
                     <span className="text-muted-foreground">Affected Area</span>
-                    <span className="font-semibold text-foreground">Zone C — Hot Work</span>
+                    <span className="font-semibold text-foreground">{highestRiskZone?.label ?? 'Unavailable'}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2 rounded border border-border/60 bg-background/35 px-2 py-1">
                     <span className="text-muted-foreground">Probability</span>
@@ -454,7 +496,7 @@ export function AICopilotLayout() {
                 </div>
                 <div className="rounded border border-border/60 bg-background/35 p-2">
                   <div className="text-muted-foreground">System Status</div>
-                  <div className="mt-1 text-[12px] font-bold text-emerald-300">Operational</div>
+                  <div className="mt-1 text-[12px] font-bold text-emerald-300">{backendConnected ? 'Backend Live' : 'Unavailable'}</div>
                 </div>
               </div>
             </Panel>
@@ -620,17 +662,17 @@ export function AICopilotLayout() {
             </div>
 
             <p className="text-[9px] leading-5 text-muted-foreground">
-              The assistant uses live plant systems, SOP data, known incidents, permits, maintenance rhythms, and industry best practices to support operational decisions.
+              The assistant uses the shared live plant state. SOP, incident, permit, maintenance, and weather services are not connected as authoritative Copilot sources.
             </p>
 
             <div className="mt-3 space-y-1.5">
               {[
                 'Live Sensor Data',
-                'SOP & Procedures',
-                'Past Incidents DB',
-                'Permit System',
-                'Maintenance History',
-                'Weather Service',
+                'SOP & Procedures (Unavailable)',
+                'Past Incidents DB (Local Match Only)',
+                'Permit System (Unavailable)',
+                'Maintenance History (Plant State Only)',
+                'Weather Service (Unavailable)',
               ].map((item) => (
                 <div key={item} className="flex items-center justify-between rounded border border-border/60 bg-background/35 px-2 py-1 text-[9px] text-foreground">
                   <span>{item}</span>

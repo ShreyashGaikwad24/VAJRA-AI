@@ -1,8 +1,11 @@
 import { Bell, CalendarDays, CloudSun, Cog, Wind } from 'lucide-react'
 
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { usePlantStore } from '@/store/usePlantStore'
 
 export function DigitalTwinHeader() {
+  const plantName = usePlantStore((state) => state.plantName)
+  const backendConnected = usePlantStore((state) => state.backendConnected)
   const now = new Date()
   const dateLabel = now.toLocaleDateString([], { month: 'short', day: '2-digit', year: 'numeric' })
   const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -16,8 +19,8 @@ export function DigitalTwinHeader() {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatusBadge label="Plant: Jamnagar" variant="stable" />
-          <StatusBadge label="System: Online" variant="active" />
+          <StatusBadge label={`Plant: ${plantName || 'Loading'}`} variant="stable" />
+          <StatusBadge label={`System: ${backendConnected ? 'Online' : 'Connecting'}`} variant={backendConnected ? 'active' : 'offline'} />
           <span className="inline-flex h-7 items-center gap-1 rounded-md border border-border/80 bg-background/65 px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
             <CloudSun className="size-3" />
             28 C Clear

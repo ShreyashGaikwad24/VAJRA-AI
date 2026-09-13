@@ -24,6 +24,8 @@ export function DecisionSimulationLayout() {
     resetSimulation,
     recommendationText,
     expectedOutcomes,
+    selectionInfo,
+    currentCriText,
   } = useDecisionSimulation()
 
   return (
@@ -68,10 +70,10 @@ export function DecisionSimulationLayout() {
 
           <Card title="Current Selection" subtitle="Scenario context" className="border-border/70">
             <div className="grid gap-1 text-[10px] text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-              <div>Scenario Name: <span className="text-foreground">Reduce High Temp in R-101</span></div>
-              <div>Focus Area: <span className="text-foreground">Reactor Unit (R-101)</span></div>
-              <div>Primary Risk: <span className="text-foreground">High Temperature</span></div>
-              <div>Current CRI: <span className="text-critical">{before.riskScores.cri} (CRITICAL)</span></div>
+              <div>Scenario Name: <span className="text-foreground">{selectionInfo.scenarioName}</span></div>
+              <div>Focus Area: <span className="text-foreground">{selectionInfo.focusArea}</span></div>
+              <div>Primary Risk: <span className="text-foreground">{selectionInfo.primaryRisk}</span></div>
+              <div>Current CRI: <span className="text-critical">{currentCriText}</span></div>
             </div>
           </Card>
         </div>

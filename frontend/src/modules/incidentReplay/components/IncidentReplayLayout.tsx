@@ -18,7 +18,7 @@ import {
 import { Area, AreaChart, ResponsiveContainer } from 'recharts'
 
 import { Panel } from '@/components/cards/Panel'
-import { REPLAY_SHORTCUTS, REPLAY_TABS, INCIDENT_REPLAY_DATA } from '@/modules/incidentReplay/services/incidentReplayData'
+import { REPLAY_SHORTCUTS, REPLAY_TABS } from '@/modules/incidentReplay/services/incidentReplayData'
 import { useIncidentReplay } from '@/modules/incidentReplay/hooks/useIncidentReplay'
 import { cn } from '@/utils/cn'
 
@@ -91,6 +91,9 @@ export function IncidentReplayLayout() {
     handleTimelineChange,
     jumpToEvent,
     togglePlayback,
+    replayData,
+    isLoading,
+    backendError,
   } = useIncidentReplay()
 
   const [noteInputOpen, setNoteInputOpen] = useState(false)
@@ -126,7 +129,7 @@ export function IncidentReplayLayout() {
     if (activeTab === 'Timeline') {
       return (
         <div className="space-y-3 rounded border border-border/70 bg-background/25 p-3">
-          {INCIDENT_REPLAY_DATA.events.map((event) => (
+          {replayData.events.map((event) => (
             <div key={event.id} className="relative flex gap-3 pb-2">
               <div className="flex flex-col items-center">
                 <div
@@ -139,14 +142,14 @@ export function IncidentReplayLayout() {
                         : 'border-cyan-300 bg-cyan-500',
                   )}
                 />
-                {event.id !== INCIDENT_REPLAY_DATA.events[INCIDENT_REPLAY_DATA.events.length - 1].id ? (
+                {event.id !== replayData.events[replayData.events.length - 1]?.id ? (
                   <div className="mt-1 h-full w-px bg-red-500/30" />
                 ) : null}
               </div>
               <div className="flex-1">
                 <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">{event.time}</div>
                 <div className="text-[10px] font-semibold text-white">{event.label}</div>
-                <div className="text-[9px] text-slate-300">{event.detail}</div>
+                <div className="text-[9px] text-slate-300">{event?.detail ?? 'Unavailable'}</div>
               </div>
             </div>
           ))}
@@ -157,7 +160,7 @@ export function IncidentReplayLayout() {
     if (activeTab === 'Sensor Data') {
       return (
         <div className="grid gap-3 md:grid-cols-2">
-          {INCIDENT_REPLAY_DATA.sensorReadings.map((sensor) => (
+          {replayData.sensorReadings.map((sensor) => (
             <div key={sensor.id} className="rounded border border-border/70 bg-background/25 p-3">
               <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.12em] text-slate-400">
                 <span>{sensor.label}</span>
@@ -268,7 +271,7 @@ export function IncidentReplayLayout() {
             <div className="absolute left-[50%] top-[45%] h-[82px] w-[82px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-red-500/60 bg-red-600/25 shadow-[0_0_42px_rgba(239,68,68,0.42)]" />
             <div className="absolute left-[50%] top-[45%] flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1 rounded-md border border-red-500/50 bg-red-500/15 px-3 py-2 text-center shadow-[0_0_26px_rgba(239,68,68,0.4)]">
               <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-red-200">R-101</span>
-              <span className="text-[11px] font-bold text-red-300">{currentEvent.detail ?? '92°C'}</span>
+              <span className="text-[11px] font-bold text-red-300">{currentEvent?.detail ?? 'Unavailable'}</span>
             </div>
             <div className="absolute inset-x-[16%] bottom-[18%] h-14 rounded-full border border-red-500/35 bg-red-500/10 blur-md" />
             <div className="absolute left-[22%] top-[54%] h-0.5 w-[32%] rotate-[-18deg] border-t border-red-500/70" />
@@ -362,14 +365,14 @@ export function IncidentReplayLayout() {
               <button type="button" onClick={() => setActiveTab('Timeline')} className="text-[9px] text-cyan-300">View All</button>
             </div>
             <div className="space-y-2 pl-2">
-              {INCIDENT_REPLAY_DATA.events.map((event) => (
+              {replayData.events.map((event) => (
                 <div key={event.id} className="relative flex gap-3">
-                  <div className={cn('absolute left-[6px] top-5 bottom-[-8px] w-px bg-red-500/30', event.id === INCIDENT_REPLAY_DATA.events[INCIDENT_REPLAY_DATA.events.length - 1].id && 'hidden')} />
+                  <div className={cn('absolute left-[6px] top-5 bottom-[-8px] w-px bg-red-500/30', event.id === replayData.events[replayData.events.length - 1]?.id && 'hidden')} />
                   <div className={cn('relative mt-1 size-3 rounded-full border', event.severity === 'critical' ? 'border-red-300 bg-red-500' : event.severity === 'warning' ? 'border-amber-300 bg-amber-500' : 'border-cyan-300 bg-cyan-500')} />
                   <div className="flex-1 pb-2">
                     <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{event.time}</div>
                     <div className="text-[10px] text-white">{event.label}</div>
-                    <div className="text-[9px] text-slate-300">{event.detail}</div>
+                    <div className="text-[9px] text-slate-300">{event?.detail ?? 'Unavailable'}</div>
                   </div>
                 </div>
               ))}
@@ -378,9 +381,9 @@ export function IncidentReplayLayout() {
 
           <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
             <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">INCIDENT SUMMARY</div>
-            <p className="text-[10px] leading-5 text-slate-300">{INCIDENT_REPLAY_DATA.summary}</p>
+            <p className="text-[10px] leading-5 text-slate-300">{replayData.summary}</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {INCIDENT_REPLAY_DATA.metrics.slice(0, 6).map((metric) => (
+              {replayData.metrics.slice(0, 6).map((metric) => (
                 <div key={metric.id} className="rounded border border-border/70 bg-background/25 p-2">
                   <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">{metric.label}</div>
                   <div className={cn('mt-2 text-[16px] font-bold', metric.tone)}>{metric.value}</div>
@@ -412,9 +415,9 @@ export function IncidentReplayLayout() {
         </div>
 
         <div className="flex items-center gap-2 text-[10px] text-slate-300">
-          <div className="rounded border border-border/70 bg-background/40 px-2 py-1.5"><span className="text-slate-400">Plant:</span> {INCIDENT_REPLAY_DATA.plantName}</div>
-          <div className="rounded border border-border/70 bg-background/40 px-2 py-1.5"><span className="text-slate-400">17 May 2025</span> 10:18 AM</div>
-          <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-red-300">System Status: EMERGENCY</div>
+          <div className="rounded border border-border/70 bg-background/40 px-2 py-1.5"><span className="text-slate-400">Plant:</span> {replayData.plantName}</div>
+          <div className="rounded border border-border/70 bg-background/40 px-2 py-1.5"><span className="text-slate-400">History:</span> {replayData.startTime}</div>
+          <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-red-300">System Status: {isLoading ? 'LOADING' : backendError ? 'UNAVAILABLE' : 'READ-ONLY'}</div>
           <button type="button" title="Alerts and notifications" onClick={() => navigateTo('Alerts & Notifications')} className="flex size-8 items-center justify-center rounded-md border border-border/70 bg-background/40 text-slate-300 hover:text-white"><Bell className="size-3.5" /></button>
           <button type="button" title="AI Copilot" onClick={() => navigateTo('AI Copilot')} className="flex size-8 items-center justify-center rounded-md border border-border/70 bg-background/40 text-slate-300 hover:text-white"><CircleHelp className="size-3.5" /></button>
           <button type="button" title="System settings" onClick={() => navigateTo('System Settings')} className="flex size-8 items-center justify-center rounded-md border border-border/70 bg-background/40 text-slate-300 hover:text-white"><Settings className="size-3.5" /></button>
@@ -424,19 +427,19 @@ export function IncidentReplayLayout() {
       <div className="flex flex-col gap-3 p-3">
         <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-300">INCIDENT REPLAY - ID: {INCIDENT_REPLAY_DATA.incidentId}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-300">{replayData.incidentType} - ID: {replayData.incidentId}</div>
             <button type="button" onClick={handleDownloadReport} className="flex items-center gap-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-cyan-200 hover:bg-cyan-500/15">
               <Download className="size-3.5" /> Download Report
             </button>
           </div>
           <div className="grid gap-3 md:grid-cols-6">
             {[
-              { label: 'Incident Type', value: INCIDENT_REPLAY_DATA.incidentType },
-              { label: 'Location', value: INCIDENT_REPLAY_DATA.location },
-              { label: 'Severity', value: INCIDENT_REPLAY_DATA.severity },
-              { label: 'Start Time', value: INCIDENT_REPLAY_DATA.startTime },
-              { label: 'End Time', value: INCIDENT_REPLAY_DATA.endTime },
-              { label: 'Duration', value: INCIDENT_REPLAY_DATA.duration },
+              { label: 'Replay Type', value: replayData.incidentType },
+              { label: 'Plant', value: replayData.location },
+              { label: 'Risk Level', value: replayData.severity },
+              { label: 'Start Time', value: replayData.startTime },
+              { label: 'End Time', value: replayData.endTime },
+              { label: 'Duration', value: replayData.duration },
             ].map((item) => (
               <div key={item.label} className="rounded border border-border/70 bg-background/25 p-2">
                 <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">{item.label}</div>
@@ -446,7 +449,7 @@ export function IncidentReplayLayout() {
           </div>
           <div className="mt-3 flex items-center justify-between rounded border border-border/70 bg-background/25 px-3 py-2">
             <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">Status</div>
-            <div className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300">{INCIDENT_REPLAY_DATA.status}</div>
+            <div className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300">{replayData.status}</div>
           </div>
         </Panel>
 
@@ -479,9 +482,9 @@ export function IncidentReplayLayout() {
               </div>
 
               <div className="space-y-2 pl-2">
-                {INCIDENT_REPLAY_DATA.events.map((event, index) => (
+                {replayData.events.map((event, index) => (
                   <div key={event.id} className="relative flex gap-3">
-                    {index !== INCIDENT_REPLAY_DATA.events.length - 1 ? <div className="absolute left-[6px] top-5 bottom-[-8px] w-px bg-red-500/30" /> : null}
+                    {index !== replayData.events.length - 1 ? <div className="absolute left-[6px] top-5 bottom-[-8px] w-px bg-red-500/30" /> : null}
                     <div className={cn('relative mt-1 size-3 rounded-full border', event.severity === 'critical' ? 'border-red-300 bg-red-500' : event.severity === 'warning' ? 'border-amber-300 bg-amber-500' : 'border-cyan-300 bg-cyan-500')} />
                     <div className="flex-1 pb-2">
                       <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">{event.time}</div>
@@ -494,9 +497,9 @@ export function IncidentReplayLayout() {
 
             <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
               <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">INCIDENT SUMMARY</div>
-              <p className="text-[10px] leading-5 text-slate-300">{INCIDENT_REPLAY_DATA.summary}</p>
+              <p className="text-[10px] leading-5 text-slate-300">{replayData.summary}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                {INCIDENT_REPLAY_DATA.metrics.map((metric) => (
+                {replayData.metrics.map((metric) => (
                   <div key={metric.id} className="rounded border border-border/70 bg-background/25 p-2">
                     <div className="text-[9px] uppercase tracking-[0.12em] text-slate-400">{metric.label}</div>
                     <div className={cn('mt-2 text-[15px] font-bold', metric.tone)}>{metric.value}</div>
@@ -511,7 +514,7 @@ export function IncidentReplayLayout() {
           <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
             <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">SENSOR DATA OVERVIEW</div>
             <div className="space-y-3 text-[10px]">
-              {INCIDENT_REPLAY_DATA.sensorReadings.map((sensor) => (
+              {replayData.sensorReadings.map((sensor) => (
                 <div key={sensor.id} className="rounded border border-border/70 bg-background/25 p-2">
                   <div className="flex items-center justify-between gap-2 text-slate-400">
                     <span>{sensor.label}</span>
@@ -526,10 +529,10 @@ export function IncidentReplayLayout() {
           <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
             <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">KEY METRICS (EVENT DURATION)</div>
             <div className="grid grid-cols-2 gap-3">
-              <RingMetric label="Evacuation" value={68} tone="#22c55e" />
-              <RingMetric label="Systems" value={85} tone="#38bdf8" />
-              <RingMetric label="Risk" value={92} tone="#f59e0b" />
-              <RingMetric label="Fatalities" value={0} tone="#ef4444" />
+              <RingMetric label="CRI" value={Number(replayData.metrics.find((metric) => metric.id === 'peak-cri')?.value ?? 0)} tone="#ef4444" />
+              <RingMetric label="PRI" value={Number(replayData.metrics.find((metric) => metric.id === 'peak-pri')?.value ?? 0)} tone="#f59e0b" />
+              <RingMetric label="ERI" value={Number(replayData.metrics.find((metric) => metric.id === 'peak-eri')?.value ?? 0)} tone="#f59e0b" />
+              <RingMetric label="SRI" value={Number(replayData.metrics.find((metric) => metric.id === 'peak-sri')?.value ?? 0)} tone="#22d3ee" />
             </div>
           </Panel>
 
@@ -548,7 +551,7 @@ export function IncidentReplayLayout() {
           <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
             <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">CAMERA FOOTAGE (INCIDENT DURATION)</div>
             <div className="grid grid-cols-2 gap-2">
-              {INCIDENT_REPLAY_DATA.cameraClips.map((clip) => (
+              {replayData.cameraClips.map((clip) => (
                 <button
                   key={clip.id}
                   type="button"

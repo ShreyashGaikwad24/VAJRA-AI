@@ -1,7 +1,10 @@
+
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from api.equipment import router as equipment_router
@@ -11,11 +14,28 @@ from api.risk_history import router as risk_history_router
 from api.sensors import router as sensors_router
 from api.simulation import router as simulation_router
 from api.telemetry import router as telemetry_router
+from api.websocket import router as websocket_router
 from api.zones import router as zones_router
 from database.session import engine
 from simulator.risk_runner import run_risk_snapshot_loop
 from simulator.runner import run_telemetry_loop
-from api.websocket import router as websocket_router
+
+
+def get_allowed_origins() -> list[str]:
+    configured_origins = os.getenv("CORS_ORIGINS")
+
+    if configured_origins:
+        return [
+            origin.strip()
+            for origin in configured_origins.split(",")
+            if origin.strip()
+        ]
+
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,6 +69,15 @@ app = FastAPI(
 )
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 app.include_router(plants_router)
 app.include_router(zones_router)
 app.include_router(equipment_router)
@@ -58,6 +87,7 @@ app.include_router(simulation_router)
 app.include_router(risk_router)
 app.include_router(risk_history_router)
 app.include_router(websocket_router)
+
 
 @app.get("/health")
 def health():

@@ -1,8 +1,6 @@
+
 import { create } from 'zustand'
 
-import { PLANT_EQUIPMENT } from '@/data/plant/equipment'
-import { PLANT_SENSORS } from '@/data/plant/sensors'
-import { PLANT_ZONES } from '@/data/plant/zones'
 import type {
   AIExplanation,
   ForecastState,
@@ -10,314 +8,808 @@ import type {
   PlantEquipment,
   PlantOverviewStats,
   PlantSensor,
+  PlantZone,
   RiskContributor,
+  RiskLevel,
   RiskRecommendation,
   RiskScores,
   RiskTrendPoint,
   SensorSnapshot,
+  TrendDirection,
 } from '@/data/plant/types'
 import { riskLevelFromScore } from '@/data/plant/types'
+
 import { buildExplanation } from '@/modules/situationRoom/services/explanationEngine'
 import { buildForecast } from '@/modules/situationRoom/services/forecastService'
 import { matchHistoricalIncident } from '@/modules/situationRoom/services/incidentService'
-import { buildRecommendations } from '@/modules/situationRoom/services/recommendationEngine'
-import {
-  computeRiskContributors,
-  computeRiskScores,
-  computeZoneRisk,
-  riskSummaryText,
-} from '@/modules/situationRoom/services/riskEngine'
-import {
-  advanceTelemetry,
-  createTelemetryContext,
-  type TelemetryContext,
-} from '@/modules/situationRoom/services/telemetrySimulator'
 
-export type ZoneState = (typeof PLANT_ZONES)[number] & { riskScore: number }
+import { loadPlantData } from '@/services/plantLoader'
+import { calculateZoneRiskScore } from '@/services/plantAdapter'
+import type { RiskResponse } from '@/services/plantApi'
+import {
+  connectRealtime,
+  type RealtimeMessage,
+  type RiskUpdate,
+  type TelemetryUpdate,
+} from '@/services/realtime'
 
-export type AppModule = 'Dashboard' | 'Digital Twin' | 'Situation Room' | 'Decision Simulation' | 'AI Copilot'
+export type ZoneState = PlantZone & {
+  riskScore: number
+  backendRiskLevel: string
+}
+
+export type AppModule =
+  | 'Dashboard'
+  | 'Digital Twin'
+  | 'Situation Room'
+  | 'Decision Simulation'
+  | 'AI Copilot'
+
+export type TelemetryContext = {
+  weatherWind: number
+  shiftFatigue: number
+}
 
 type PlantStore = {
   simulationMode: boolean
   plantName: string
+
   equipment: PlantEquipment[]
   sensors: PlantSensor[]
   zones: ZoneState[]
+
   telemetryContext: TelemetryContext
+
   riskScores: RiskScores
   riskSummary: string
   riskContributors: RiskContributor[]
   recommendations: RiskRecommendation[]
+
   explanation: AIExplanation
   patternMatch: PatternMatch
   forecast: ForecastState
+
   riskTrendHistory: RiskTrendPoint[]
   sensorSnapshot: SensorSnapshot[]
   overview: PlantOverviewStats
+
   selectedZoneId: string | null
   selectedEquipmentId: string | null
   selectedSensorId: string | null
+
   showSensors: boolean
   cameraView: '3d' | 'top'
   heatMapMode: 'heat' | 'bubble'
   zoneFilter: string
-  initialize: () => void
+
+  isLoading: boolean
+  backendConnected: boolean
+  backendError: string | null
+
+  sensorCodeByBackendId: Record<number, string>
+
+  initialize: () => Promise<void>
   tickTelemetry: () => void
   recalculateRisk: () => void
+
   selectZone: (zoneId: string | null) => void
   selectEquipment: (equipmentId: string | null) => void
   selectSensor: (sensorId: string | null) => void
+
   setShowSensors: (value: boolean) => void
   setCameraView: (view: '3d' | 'top') => void
   setHeatMapMode: (mode: 'heat' | 'bubble') => void
   setZoneFilter: (zoneId: string) => void
 }
 
-function buildSensorSnapshot(sensors: PlantSensor[], context: TelemetryContext): SensorSnapshot[] {
-  const temp = sensors.find((sensor) => sensor.type === 'temperature' && sensor.equipmentId === 'R-101')
-  const pressure = sensors.find((sensor) => sensor.type === 'pressure' && sensor.equipmentId === 'R-101')
-  const gas = sensors.find((sensor) => sensor.type === 'gas')
-  const vibration = sensors.find((sensor) => sensor.type === 'vibration')
-  const humidity = sensors.find((sensor) => sensor.type === 'humidity')
-
-  const trend = (history: number[]) => {
-    const last = history[history.length - 1] ?? 0
-    const prev = history[history.length - 4] ?? last
-    if (last > prev + 0.2) return 'up' as const
-    if (last < prev - 0.2) return 'down' as const
-    return 'flat' as const
-  }
-
-  return [
-    {
-      id: 'snap-temp',
-      label: 'Temperature',
-      value: temp?.value ?? 0,
-      unit: '°C',
-      status: riskLevelFromScore(((temp?.value ?? 0) - 300) / 1.5),
-      trend: trend(temp?.history ?? []),
-      history: temp?.history ?? [],
-    },
-    {
-      id: 'snap-pressure',
-      label: 'Pressure',
-      value: pressure?.value ?? 0,
-      unit: 'bar',
-      status: riskLevelFromScore(((pressure?.value ?? 0) - 10) * 8),
-      trend: trend(pressure?.history ?? []),
-      history: pressure?.history ?? [],
-    },
-    {
-      id: 'snap-gas',
-      label: 'Gas Leak',
-      value: gas?.value ?? 0,
-      unit: '% LEL',
-      status: riskLevelFromScore((gas?.value ?? 0) * 1.05),
-      trend: trend(gas?.history ?? []),
-      history: gas?.history ?? [],
-    },
-    {
-      id: 'snap-vibration',
-      label: 'Vibration',
-      value: vibration?.value ?? 0,
-      unit: 'mm/s',
-      status: riskLevelFromScore((vibration?.value ?? 0) * 24),
-      trend: trend(vibration?.history ?? []),
-      history: vibration?.history ?? [],
-    },
-    {
-      id: 'snap-humidity',
-      label: 'Humidity',
-      value: humidity?.value ?? 0,
-      unit: '%',
-      status: riskLevelFromScore(Math.abs((humidity?.value ?? 0) - 45) * 1.2),
-      trend: trend(humidity?.history ?? []),
-      history: humidity?.history ?? [],
-    },
-    {
-      id: 'snap-wind',
-      label: 'Wind Speed',
-      value: context.weatherWind,
-      unit: 'km/h',
-      status: riskLevelFromScore(context.weatherWind * 2.2),
-      trend: context.weatherWind > 12 ? 'up' : 'flat',
-      history: Array.from({ length: 24 }, (_, index) => context.weatherWind + Math.sin(index / 4) * 0.8),
-    },
-  ]
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
-function buildOverview(equipment: PlantEquipment[], sensors: PlantSensor[], zones: ZoneState[]): PlantOverviewStats {
-  return {
-    totalAssets: 1248,
-    activeSensors: sensors.length,
-    activePermits: zones.reduce((sum, zone) => sum + zone.activePermits, 0),
-    onSiteWorkers: equipment.reduce((sum, item) => sum + item.workersNearby, 0),
-    openIncidents: equipment.filter((item) => item.status === 'Critical').length + 1,
-  }
+function trendFromDelta(delta: number): TrendDirection {
+  if (delta > 0.4) return 'up'
+  if (delta < -0.4) return 'down'
+  return 'flat'
 }
 
-function deriveState(
+function buildSensorSnapshot(sensors: PlantSensor[]): SensorSnapshot[] {
+  return sensors.map((sensor) => {
+    const history = sensor.history
+    const previousValue =
+      history.length > 1
+        ? history[history.length - 2]
+        : sensor.value
+
+    const delta = sensor.value - previousValue
+    const trend = trendFromDelta(delta)
+
+    let status: RiskLevel = 'safe'
+
+    if (
+      sensor.value < sensor.normalMin ||
+      sensor.value > sensor.normalMax
+    ) {
+      const span = Math.max(
+        sensor.normalMax - sensor.normalMin,
+        1,
+      )
+
+      const deviation =
+        sensor.value > sensor.normalMax
+          ? ((sensor.value - sensor.normalMax) / span) * 100
+          : ((sensor.normalMin - sensor.value) / span) * 100
+
+      status = riskLevelFromScore(
+        clamp(20 + deviation, 20, 99),
+      )
+    } else if (
+      sensor.value >
+      sensor.normalMin +
+        (sensor.normalMax - sensor.normalMin) * 0.85
+    ) {
+      status = 'low'
+    }
+
+    return {
+      id: sensor.id,
+      label: sensor.id,
+      value: sensor.value,
+      unit: sensor.unit,
+      status,
+      trend,
+      history,
+    }
+  })
+}
+
+function buildOverview(
   equipment: PlantEquipment[],
   sensors: PlantSensor[],
-  zonesBase: typeof PLANT_ZONES,
-  context: TelemetryContext,
-  selectedZoneId: string | null,
-  selectedEquipmentId: string | null,
-) {
-  const zones: ZoneState[] = zonesBase.map((zone) => ({
-    ...zone,
-    riskScore: Math.round(computeZoneRisk(zone, equipment, sensors)),
-  }))
+  zones: ZoneState[],
+): PlantOverviewStats {
+  return {
+    totalAssets: equipment.length,
+    activeSensors: sensors.length,
+    activePermits: zones.reduce(
+      (sum, zone) => sum + zone.activePermits,
+      0,
+    ),
+    onSiteWorkers: equipment.reduce(
+      (sum, item) => sum + item.workersNearby,
+      0,
+    ),
+    openIncidents: equipment.filter(
+      (item) => item.status === 'Critical',
+    ).length,
+  }
+}
 
-  const riskScores = computeRiskScores(zones, equipment, sensors, context.weatherWind, context.shiftFatigue)
-  const riskContributors = computeRiskContributors(zones, equipment, sensors, context.weatherWind, context.shiftFatigue)
-  const recommendations = buildRecommendations(riskScores, equipment, sensors, zones)
-  const explanation = buildExplanation(riskScores, equipment, sensors, zones, riskContributors)
-  const patternMatch = matchHistoricalIncident(equipment, sensors, zones, riskContributors)
-  const forecast = buildForecast(riskScores, equipment, sensors)
+function buildRiskSummary(
+  scores: RiskScores,
+  equipment: PlantEquipment[],
+): string {
+  const reactor = equipment.find(
+    (item) => item.id === 'R-101',
+  )
+
+  const level = riskLevelFromScore(scores.cri)
+
+  if (level === 'critical') {
+    return `High temperature trend detected in Reactor Unit (${reactor?.id ?? 'R-101'}). Immediate mitigation and supervisory intervention required.`
+  }
+
+  if (level === 'high') {
+    return `Elevated process risk across active zones. Reactor ${reactor?.id ?? 'R-101'} requires immediate supervisory review.`
+  }
+
+  if (level === 'medium') {
+    return `Moderate operational risk detected across active plant conditions. Continue enhanced monitoring and review active contributors.`
+  }
+
+  return 'Plant operating within monitored safety thresholds. Continue active surveillance.'
+}
+
+function mapRiskScores(risk: RiskResponse): RiskScores {
+  return {
+    cri: Math.round(clamp(risk.cri, 0, 100)),
+    pri: Math.round(clamp(risk.pri, 0, 100)),
+    eri: Math.round(clamp(risk.eri, 0, 100)),
+    sri: Math.round(clamp(risk.sri, 0, 100)),
+  }
+}
+
+function mapRiskContributors(
+  contributors: RiskResponse['contributors'],
+): RiskContributor[] {
+  return contributors.map((item, index) => {
+    const impact = clamp(item.score, 0, 100)
+
+    return {
+      id: `backend-contributor-${index}-${item.factor
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')}`,
+      factor: item.factor,
+      impact,
+      trend:
+        impact >= 60
+          ? 'up'
+          : impact <= 25
+            ? 'down'
+            : 'flat',
+      value: Math.round(impact),
+    }
+  })
+}
+
+function mapRiskRecommendations(
+  recommendations: RiskResponse['recommendations'],
+): RiskRecommendation[] {
+  return recommendations.map((item, index) => {
+    const priorityText = item.priority.toLowerCase()
+
+    const severity: RiskLevel =
+      priorityText === 'critical'
+        ? 'critical'
+        : priorityText === 'high'
+          ? 'high'
+          : priorityText === 'medium'
+            ? 'medium'
+            : 'low'
+
+    const priority =
+      severity === 'critical'
+        ? 1
+        : severity === 'high'
+          ? 2
+          : severity === 'medium'
+            ? 3
+            : 4
+
+    return {
+      id: `backend-recommendation-${index}`,
+      priority,
+      severity,
+      title: item.action,
+      detail: item.reason,
+      executionTime:
+        severity === 'critical'
+          ? 'Immediate'
+          : severity === 'high'
+            ? '5 min'
+            : severity === 'medium'
+              ? '10 min'
+              : '15 min',
+      riskReduction:
+        severity === 'critical'
+          ? 18
+          : severity === 'high'
+            ? 12
+            : severity === 'medium'
+              ? 8
+              : 5,
+      status:
+        severity === 'critical'
+          ? 'ready'
+          : 'queued',
+    }
+  })
+}
+
+function applyRiskUpdate(
+  risk: RiskUpdate['risk'],
+  equipment: PlantEquipment[],
+  sensors: PlantSensor[],
+  zones: ZoneState[],
+  previousHistory: RiskTrendPoint[],
+) {
+  const riskScores = mapRiskScores(risk)
+
+  const riskContributors = mapRiskContributors(
+    risk.contributors,
+  )
+
+  const recommendations = mapRiskRecommendations(
+    risk.recommendations,
+  )
+
+  const explanation = buildExplanation(
+    riskScores,
+    equipment,
+    sensors,
+    zones,
+    riskContributors,
+  )
+
+  const patternMatch = matchHistoricalIncident(
+    equipment,
+    sensors,
+    zones,
+    riskContributors,
+  )
+
+  const forecast = buildForecast(
+    riskScores,
+    equipment,
+    sensors,
+  )
+
+  const now = Date.now()
+
+  const nextHistory = [
+    ...previousHistory.slice(-47),
+    {
+      timestamp: now,
+      cri: riskScores.cri,
+      pri: riskScores.pri,
+      eri: riskScores.eri,
+    },
+  ]
 
   return {
-    zones,
     riskScores,
-    riskSummary: riskSummaryText(riskScores, equipment),
+    riskSummary: buildRiskSummary(
+      riskScores,
+      equipment,
+    ),
     riskContributors,
     recommendations,
     explanation,
     patternMatch,
     forecast,
-    sensorSnapshot: buildSensorSnapshot(sensors, context),
-    overview: buildOverview(equipment, sensors, zones),
-    selectedZoneId,
-    selectedEquipmentId,
+    riskTrendHistory: nextHistory,
+    sensorSnapshot: buildSensorSnapshot(sensors),
+    overview: buildOverview(
+      equipment,
+      sensors,
+      zones,
+    ),
   }
 }
 
-export const usePlantStore = create<PlantStore>((set, get) => ({
-  simulationMode: true,
-  plantName: 'Jamnagar Refinery',
-  equipment: structuredClone(PLANT_EQUIPMENT),
-  sensors: structuredClone(PLANT_SENSORS),
-  zones: [],
-  telemetryContext: createTelemetryContext(),
-  riskScores: { cri: 0, pri: 0, eri: 0, sri: 0 },
-  riskSummary: '',
-  riskContributors: [],
-  recommendations: [],
-  explanation: { text: '', confidence: 0, evidence: [] },
-  patternMatch: {
-    incident: {
-      id: '',
-      title: '',
-      description: '',
-      similarityFactors: [],
-      outcome: '',
-      downtime: '',
-      totalLoss: '',
-      injuries: 0,
-      tags: [],
-    },
-    similarity: 0,
-    matchedFactors: [],
-  },
-  forecast: { status: 'high', probability: 0, timeToCriticalMinutes: 0, points: [] },
-  riskTrendHistory: [],
-  sensorSnapshot: [],
-  overview: { totalAssets: 0, activeSensors: 0, activePermits: 0, onSiteWorkers: 0, openIncidents: 0 },
-  selectedZoneId: null,
-  selectedEquipmentId: null,
-  selectedSensorId: null,
-  showSensors: false,
-  cameraView: '3d',
-  heatMapMode: 'heat',
-  zoneFilter: 'All Zones',
+function updateSensorFromTelemetry(
+  sensors: PlantSensor[],
+  telemetry: TelemetryUpdate,
+  sensorCodeByBackendId: Record<number, string>,
+): PlantSensor[] {
+  if (telemetry.readings.length === 0) {
+    return sensors
+  }
 
-  initialize: () => {
-    const equipment = structuredClone(PLANT_EQUIPMENT)
-    const sensors = structuredClone(PLANT_SENSORS)
-    const context = createTelemetryContext()
-    const derived = deriveState(equipment, sensors, PLANT_ZONES, context, null, null)
-    const now = Date.now()
-    set({
-      equipment,
-      sensors,
-      telemetryContext: context,
-      ...derived,
-      riskTrendHistory: [{ timestamp: now, cri: derived.riskScores.cri, pri: derived.riskScores.pri, eri: derived.riskScores.eri }],
-    })
-  },
+  const readingsByCode = new Map<string, number>()
 
-  tickTelemetry: () => {
-    const state = get()
-    const advanced = advanceTelemetry(state.equipment, state.sensors, state.telemetryContext)
-    const derived = deriveState(
-      advanced.equipment,
-      advanced.sensors,
-      PLANT_ZONES,
-      advanced.context,
-      state.selectedZoneId,
-      state.selectedEquipmentId,
+  for (const reading of telemetry.readings) {
+    const code =
+      sensorCodeByBackendId[reading.sensor_id]
+
+    if (code !== undefined) {
+      readingsByCode.set(code, reading.value)
+    }
+  }
+
+  if (readingsByCode.size === 0) {
+    return sensors
+  }
+
+  return sensors.map((sensor) => {
+    const nextValue = readingsByCode.get(sensor.id)
+
+    if (nextValue === undefined) {
+      return sensor
+    }
+
+    return {
+      ...sensor,
+      value: nextValue,
+      history: [
+        ...sensor.history,
+        nextValue,
+      ].slice(-24),
+    }
+  })
+}
+
+function updateEquipmentFromSensors(
+  equipment: PlantEquipment[],
+  sensors: PlantSensor[],
+): PlantEquipment[] {
+  return equipment.map((item) => {
+    const equipmentSensors = sensors.filter(
+      (sensor) => sensor.equipmentId === item.id,
     )
-    set({
-      equipment: advanced.equipment,
-      sensors: advanced.sensors,
-      telemetryContext: advanced.context,
-      ...derived,
-    })
-  },
 
-  recalculateRisk: () => {
-    const state = get()
-    const derived = deriveState(
-      state.equipment,
-      state.sensors,
-      PLANT_ZONES,
-      state.telemetryContext,
-      state.selectedZoneId,
-      state.selectedEquipmentId,
-    )
-    const now = Date.now()
-    set({
-      ...derived,
-      riskTrendHistory: [
-        ...state.riskTrendHistory.slice(-47),
-        {
-          timestamp: now,
-          cri: derived.riskScores.cri,
-          pri: derived.riskScores.pri,
-          eri: derived.riskScores.eri,
+    if (equipmentSensors.length === 0) {
+      return item
+    }
+
+    const next = { ...item }
+
+    for (const sensor of equipmentSensors) {
+      switch (sensor.type) {
+        case 'temperature':
+          next.temperature = sensor.value
+          break
+
+        case 'pressure':
+          next.pressure = sensor.value
+          break
+
+        case 'flow':
+          next.flow = sensor.value
+          break
+
+        case 'vibration':
+          next.vibration = sensor.value
+          break
+
+        case 'gas':
+          next.gas = sensor.value
+          break
+
+        case 'humidity':
+          next.humidity = sensor.value
+          break
+      }
+    }
+
+    return next
+  })
+}
+
+function applyTelemetryUpdate(
+  telemetry: TelemetryUpdate,
+  sensors: PlantSensor[],
+  equipment: PlantEquipment[],
+  sensorCodeByBackendId: Record<number, string>,
+) {
+  const updatedSensors = updateSensorFromTelemetry(
+    sensors,
+    telemetry,
+    sensorCodeByBackendId,
+  )
+
+  const updatedEquipment = updateEquipmentFromSensors(
+    equipment,
+    updatedSensors,
+  )
+
+  return {
+    sensors: updatedSensors,
+    equipment: updatedEquipment,
+  }
+}
+
+export const usePlantStore = create<PlantStore>(
+  (set, get) => {
+    let disconnectRealtime:
+      (() => void) | null = null
+
+    const handleRealtimeMessage = (
+      message: RealtimeMessage,
+    ) => {
+      const state = get()
+
+      if (message.type === 'telemetry_update') {
+        const updated = applyTelemetryUpdate(
+          message,
+          state.sensors,
+          state.equipment,
+          state.sensorCodeByBackendId,
+        )
+        const updatedZones = state.zones.map((zone) => ({
+          ...zone,
+          riskScore: calculateZoneRiskScore(
+            zone.backendRiskLevel,
+            zone.id,
+            updated.equipment,
+            updated.sensors,
+          ),
+        }))
+
+        set({
+          sensors: updated.sensors,
+          equipment: updated.equipment,
+          zones: updatedZones,
+          sensorSnapshot: buildSensorSnapshot(
+            updated.sensors,
+          ),
+          overview: buildOverview(
+            updated.equipment,
+            updated.sensors,
+            updatedZones,
+          ),
+          backendConnected: true,
+          backendError: null,
+        })
+
+        return
+      }
+
+      const derived = applyRiskUpdate(
+        message.risk,
+        state.equipment,
+        state.sensors,
+        state.zones,
+        state.riskTrendHistory,
+      )
+
+      set({
+        ...derived,
+        backendConnected: true,
+        backendError: null,
+      })
+    }
+
+    const connectBackendRealtime = () => {
+      if (disconnectRealtime !== null) {
+        disconnectRealtime()
+        disconnectRealtime = null
+      }
+
+      disconnectRealtime = connectRealtime({
+        onOpen: () => {
+          set({
+            backendConnected: true,
+            backendError: null,
+          })
         },
-      ],
-    })
-  },
 
-  selectZone: (zoneId) => {
-    const state = get()
-    set({
-      selectedZoneId: zoneId,
+        onMessage: handleRealtimeMessage,
+
+        onClose: () => {
+          set({
+            backendConnected: false,
+          })
+        },
+
+        onError: () => {
+          set({
+            backendConnected: false,
+            backendError:
+              'Realtime connection error.',
+          })
+        },
+      })
+    }
+
+    return {
+      simulationMode: false,
+      plantName: 'Jamnagar Refinery',
+
+      equipment: [],
+      sensors: [],
+      zones: [],
+
+      telemetryContext: {
+        weatherWind: 10,
+        shiftFatigue: 35,
+      },
+
+      riskScores: {
+        cri: 0,
+        pri: 0,
+        eri: 0,
+        sri: 0,
+      },
+
+      riskSummary: '',
+      riskContributors: [],
+      recommendations: [],
+
+      explanation: {
+        text: '',
+        confidence: 0,
+        evidence: [],
+      },
+
+      patternMatch: {
+        incident: {
+          id: '',
+          title: '',
+          description: '',
+          similarityFactors: [],
+          outcome: '',
+          downtime: '',
+          totalLoss: '',
+          injuries: 0,
+          tags: [],
+        },
+        similarity: 0,
+        matchedFactors: [],
+      },
+
+      forecast: {
+        status: 'low',
+        probability: 0,
+        timeToCriticalMinutes: 0,
+        points: [],
+      },
+
+      riskTrendHistory: [],
+      sensorSnapshot: [],
+
+      overview: {
+        totalAssets: 0,
+        activeSensors: 0,
+        activePermits: 0,
+        onSiteWorkers: 0,
+        openIncidents: 0,
+      },
+
+      selectedZoneId: null,
       selectedEquipmentId: null,
       selectedSensorId: null,
-      zoneFilter: zoneId ?? 'All Zones',
-    })
-    state.recalculateRisk()
-  },
 
-  selectEquipment: (equipmentId) => {
-    const state = get()
-    const equipment = state.equipment.find((item) => item.id === equipmentId)
-    set({
-      selectedEquipmentId: equipmentId,
-      selectedZoneId: equipment?.zoneId ?? state.selectedZoneId,
-      selectedSensorId: null,
-    })
-    state.recalculateRisk()
-  },
+      showSensors: false,
+      cameraView: '3d',
+      heatMapMode: 'heat',
+      zoneFilter: 'All Zones',
 
-  selectSensor: (sensorId) => set({ selectedSensorId: sensorId }),
+      isLoading: false,
+      backendConnected: false,
+      backendError: null,
 
-  setShowSensors: (value) => set({ showSensors: value }),
-  setCameraView: (view) => set({ cameraView: view }),
-  setHeatMapMode: (mode) => set({ heatMapMode: mode }),
-  setZoneFilter: (zoneId) => {
-    get().selectZone(zoneId === 'All Zones' ? null : zoneId)
+      sensorCodeByBackendId: {},
+
+      initialize: async () => {
+        const state = get()
+
+        if (state.isLoading) {
+          return
+        }
+
+        set({
+          isLoading: true,
+          backendError: null,
+        })
+
+        try {
+          const data = await loadPlantData()
+
+          const equipment = data.equipment
+          const sensors = data.sensors
+
+          const zones: ZoneState[] =
+            data.zones.map((zone) => ({
+              ...zone,
+              riskScore: zone.riskScore,
+              backendRiskLevel: zone.backendRiskLevel,
+            }))
+
+          const derived = applyRiskUpdate(
+            data.risk,
+            equipment,
+            sensors,
+            zones,
+            [],
+          )
+
+          set({
+            plantName: data.plant.name,
+
+            equipment,
+            sensors,
+            zones,
+
+            riskScores: derived.riskScores,
+            riskSummary: derived.riskSummary,
+            riskContributors:
+              derived.riskContributors,
+            recommendations:
+              derived.recommendations,
+
+            explanation: derived.explanation,
+            patternMatch: derived.patternMatch,
+            forecast: derived.forecast,
+
+            riskTrendHistory:
+              derived.riskTrendHistory,
+            sensorSnapshot:
+              derived.sensorSnapshot,
+            overview: derived.overview,
+
+            sensorCodeByBackendId:
+              data.sensorCodeByBackendId,
+
+            isLoading: false,
+            backendConnected: false,
+            backendError: null,
+          })
+
+          connectBackendRealtime()
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Failed to load SAFE-AI plant data.'
+
+          set({
+            isLoading: false,
+            backendConnected: false,
+            backendError: message,
+          })
+
+          console.error(
+            'Failed to initialize SAFE-AI backend state:',
+            error,
+          )
+        }
+      },
+
+      tickTelemetry: () => {
+        // Backend telemetry simulator is authoritative.
+        // Live telemetry arrives through WebSocket.
+      },
+
+      recalculateRisk: () => {
+        // Backend risk engine is authoritative.
+        // Live risk arrives through WebSocket.
+      },
+
+      selectZone: (zoneId) => {
+        set({
+          selectedZoneId: zoneId,
+          selectedEquipmentId: null,
+          selectedSensorId: null,
+          zoneFilter:
+            zoneId ?? 'All Zones',
+        })
+      },
+
+      selectEquipment: (equipmentId) => {
+        const state = get()
+
+        const equipment =
+          state.equipment.find(
+            (item) => item.id === equipmentId,
+          )
+
+        set({
+          selectedEquipmentId: equipmentId,
+          selectedZoneId:
+            equipment?.zoneId ??
+            state.selectedZoneId,
+          selectedSensorId: null,
+          zoneFilter:
+            equipment?.zoneId ??
+            state.zoneFilter,
+        })
+      },
+
+      selectSensor: (sensorId) => {
+        set({
+          selectedSensorId: sensorId,
+        })
+      },
+
+      setShowSensors: (value) => {
+        set({
+          showSensors: value,
+        })
+      },
+
+      setCameraView: (view) => {
+        set({
+          cameraView: view,
+        })
+      },
+
+      setHeatMapMode: (mode) => {
+        set({
+          heatMapMode: mode,
+        })
+      },
+
+      setZoneFilter: (zoneId) => {
+        set({
+          zoneFilter: zoneId,
+          selectedZoneId:
+            zoneId === 'All Zones'
+              ? null
+              : zoneId,
+          selectedEquipmentId: null,
+          selectedSensorId: null,
+        })
+      },
+    }
   },
-}))
+)

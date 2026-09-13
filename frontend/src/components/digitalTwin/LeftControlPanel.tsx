@@ -6,6 +6,7 @@ import { Card } from '@/components/cards/Card'
 import { DigitalTwinLegend } from '@/components/digitalTwin/DigitalTwinLegend'
 import { ViewModeSelector } from '@/components/digitalTwin/ViewModeSelector'
 import { ZoneSelector } from '@/components/digitalTwin/ZoneSelector'
+import { usePlantStore } from '@/store/usePlantStore'
 
 type ViewMode = 'Plant View' | 'Zone View' | 'Sensor View' | 'Heat Map' | 'Risk View'
 type LayerKey = 'equipment' | 'pipelines' | 'workers' | 'sensors' | 'cameras' | 'labels'
@@ -49,6 +50,8 @@ export function LeftControlPanel({
   layersVisible,
   onLayerToggle,
 }: LeftControlPanelProps) {
+  const overview = usePlantStore((state) => state.overview)
+
   return (
     <Card title="Control Stack" subtitle="Plant context, layers, and filters" className="h-full">
       <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-auto pr-0.5">
@@ -56,19 +59,19 @@ export function LeftControlPanel({
           <div className="grid grid-cols-2 gap-1">
             <div className="rounded-md border border-border/70 bg-background/55 px-2 py-1">
               <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Workers</p>
-              <p className="text-[13px] font-semibold text-foreground">356</p>
+              <p className="text-[13px] font-semibold text-foreground">{overview.onSiteWorkers}</p>
             </div>
             <div className="rounded-md border border-border/70 bg-background/55 px-2 py-1">
               <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Sensors</p>
-              <p className="text-[13px] font-semibold text-foreground">1,284</p>
+              <p className="text-[13px] font-semibold text-foreground">{overview.activeSensors}</p>
             </div>
             <div className="rounded-md border border-border/70 bg-background/55 px-2 py-1">
               <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Permits</p>
-              <p className="text-[13px] font-semibold text-warning">48</p>
+              <p className="text-[13px] font-semibold text-warning">0</p>
             </div>
             <div className="rounded-md border border-border/70 bg-background/55 px-2 py-1">
               <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Incidents</p>
-              <p className="text-[13px] font-semibold text-danger">3</p>
+              <p className="text-[13px] font-semibold text-danger">0</p>
             </div>
           </div>
         </CollapsibleSection>

@@ -5,8 +5,11 @@ import { DigitalTwinHeader } from '@/components/digitalTwin/DigitalTwinHeader'
 import { DigitalTwinViewport } from '@/components/digitalTwin/DigitalTwinViewport'
 import { LeftControlPanel } from '@/components/digitalTwin/LeftControlPanel'
 import { RightIntelligencePanel } from '@/components/digitalTwin/RightIntelligencePanel'
+import { usePlantSimulation } from '@/modules/situationRoom/hooks/usePlantSimulation'
 
 export function DigitalTwinLayout() {
+  usePlantSimulation(true)
+
   const [search, setSearch] = useState('')
   const [viewMode, setViewMode] = useState<'Plant View' | 'Zone View' | 'Sensor View' | 'Heat Map' | 'Risk View'>('Plant View')
   const [selectedZone, setSelectedZone] = useState('All Zones')
