@@ -21,6 +21,8 @@ import { Panel } from '@/components/cards/Panel'
 import { SelectField } from '@/components/common/SelectField'
 import { SearchBox } from '@/components/common/SearchBox'
 import { cn } from '@/utils/cn'
+import { riskLevelFromScore } from '@/data/plant/types'
+import { usePlantStore } from '@/store/usePlantStore'
 import {
   areaOptions,
   articleCategories,
@@ -534,6 +536,12 @@ function FaqsView() {
 }
 
 export function SopKnowledgeLayout() {
+  const plantName = usePlantStore((state) => state.plantName)
+  const riskScores = usePlantStore((state) => state.riskScores)
+  const backendConnected = usePlantStore((state) => state.backendConnected)
+
+  const currentRiskLevel = riskLevelFromScore(riskScores.cri)
+
   const [activeTab, setActiveTab] = useState<SopTab>('SOP Library')
 
   const content =
@@ -561,11 +569,30 @@ export function SopKnowledgeLayout() {
             </div>
           </div>
 
-          <div className="hidden items-center gap-1.5 text-[10px] lg:flex">
-            <div className="rounded border border-border/70 bg-background/40 px-2 py-1 text-muted-foreground">Plant: Jamnagar Refinery</div>
-            <div className="rounded border border-border/70 bg-background/40 px-2 py-1 text-muted-foreground">Date &amp; Time: 17 May 2025, 10:24:35 AM</div>
-            <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 font-semibold uppercase tracking-[0.14em] text-red-300">System Status: EMERGENCY</div>
-          </div>
+<div className="hidden items-center gap-1.5 text-[10px] lg:flex">
+  <div className="rounded border border-border/70 bg-background/40 px-2 py-1 text-muted-foreground">
+    Plant: {plantName || 'Unknown Plant'}
+  </div>
+
+  <div className="rounded border border-border/70 bg-background/40 px-2 py-1 text-muted-foreground">
+    Date &amp; Time: {new Date().toLocaleString()}
+  </div>
+
+  <div
+    className={cn(
+      'rounded border px-2 py-1 font-semibold uppercase tracking-[0.14em]',
+      currentRiskLevel === 'critical'
+        ? 'border-red-500/40 bg-red-500/10 text-red-300'
+        : currentRiskLevel === 'high'
+          ? 'border-orange-500/40 bg-orange-500/10 text-orange-300'
+          : currentRiskLevel === 'medium'
+            ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+            : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+    )}
+  >
+    System Status: {backendConnected ? currentRiskLevel.toUpperCase() : 'OFFLINE'}
+  </div>
+</div>
 
           <div className="flex items-center gap-2">
             <button type="button" className="flex size-8 items-center justify-center rounded-md border border-border/70 bg-background/40 text-muted-foreground hover:text-foreground"><Bell className="size-3.5" /></button>

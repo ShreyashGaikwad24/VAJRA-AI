@@ -46,6 +46,8 @@ import {
   type PermitTab,
 } from '@/modules/permitManagement/permitManagementData'
 import { cn } from '@/utils/cn'
+import { riskLevelFromScore } from '@/data/plant/types'
+import { usePlantStore } from '@/store/usePlantStore'
 
 function getPermitStatusClasses(status: Permit['status']) {
   switch (status) {
@@ -491,7 +493,17 @@ function SettingsView() {
 }
 
 export function PermitManagementLayout() {
+  const plantName = usePlantStore((state) => state.plantName)
+  const riskScores = usePlantStore((state) => state.riskScores)
+  const backendConnected = usePlantStore((state) => state.backendConnected)
+
+  const currentRiskLevel = riskLevelFromScore(riskScores.cri)
+
   const [activeTab, setActiveTab] = useState<PermitTab>('Overview')
+
+
+
+  
   const [selectedPermit, setSelectedPermit] = useState<Permit | null>(permitRows[0])
   const [statusFilter, setStatusFilter] = useState('All Status')
   const [areaFilter, setAreaFilter] = useState('All Areas')
@@ -561,11 +573,30 @@ export function PermitManagementLayout() {
             <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-400">PERMIT MANAGEMENT</div>
             <div className="mt-1 text-[11px] text-muted-foreground">Manage Work Permits, Approvals &amp; Compliance</div>
           </div>
-          <div className="hidden items-center gap-2 md:flex">
-            <div className="rounded border border-border/70 bg-background/35 px-2 py-1 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Plant: Jamnagar Refinery</div>
-            <div className="rounded border border-border/70 bg-background/35 px-2 py-1 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Date &amp; Time: 17 May 2025, 10:24:35 AM</div>
-            <div className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-red-200">System Status: EMERGENCY</div>
-          </div>
+<div className="hidden items-center gap-2 md:flex">
+  <div className="rounded border border-border/70 bg-background/35 px-2 py-1 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+    Plant: {plantName || 'Unknown Plant'}
+  </div>
+
+  <div className="rounded border border-border/70 bg-background/35 px-2 py-1 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+    Date &amp; Time: {new Date().toLocaleString()}
+  </div>
+
+  <div
+    className={cn(
+      'rounded border px-2 py-1 text-[9px] font-bold uppercase tracking-[0.14em]',
+      currentRiskLevel === 'critical'
+        ? 'border-red-500/40 bg-red-500/10 text-red-200'
+        : currentRiskLevel === 'high'
+          ? 'border-orange-500/40 bg-orange-500/10 text-orange-200'
+          : currentRiskLevel === 'medium'
+            ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+            : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200',
+    )}
+  >
+    System Status: {backendConnected ? currentRiskLevel.toUpperCase() : 'OFFLINE'}
+  </div>
+</div>
         </div>
 
         <nav className="mt-2 flex flex-wrap items-center gap-1.5">

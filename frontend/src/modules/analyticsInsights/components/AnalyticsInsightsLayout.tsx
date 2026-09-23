@@ -80,6 +80,9 @@ import {
   uptimeComparisonData,
 } from '@/modules/analyticsInsights/analyticsData'
 import { cn } from '@/utils/cn'
+import { riskLevelFromScore } from '@/data/plant/types'
+import { usePlantSimulation } from '@/modules/situationRoom/hooks/usePlantSimulation'
+import { usePlantStore } from '@/store/usePlantStore'
 
 const heatColorMap = ['#071d31', '#0f3259', '#145992', '#1a7dc8', '#f59e0b', '#ef4444']
 
@@ -429,7 +432,10 @@ function IncidentAnalyticsContent() {
             <div className="mb-2 flex items-center justify-between">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">INCIDENT TREND OVER TIME</div>
-                <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Last 7 days</div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Last 7 days</span>
+                  <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">Sim</span>
+                </div>
               </div>
               <button type="button" className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground">This Week</button>
             </div>
@@ -557,22 +563,87 @@ function IncidentAnalyticsContent() {
 }
 
 function RiskAnalyticsContent() {
+  const backendConnected = usePlantStore(
+    (state) => state.backendConnected,
+  )
+  const riskScores = usePlantStore((state) => state.riskScores)
+  const riskTrendHistory = usePlantStore(
+    (state) => state.riskTrendHistory,
+  )
+  const zones = usePlantStore((state) => state.zones)
+
+  const liveRiskTrend = useMemo(() => {
+    if (riskTrendHistory.length === 0) return null
+
+    return riskTrendHistory.map((point) => ({
+      day: new Date(point.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      score: point.cri,
+    }))
+  }, [riskTrendHistory])
+
+  const riskTrendActive =
+    backendConnected &&
+    liveRiskTrend !== null &&
+    liveRiskTrend.length > 0
+
+  const liveRiskKpis = useMemo<KpiItem[]>(() => {
+    if (!backendConnected) return riskAnalyticsKpis
+
+    const criticalZoneCount = zones.filter(
+      (zone) => riskLevelFromScore(zone.riskScore) === 'critical',
+    ).length
+
+    return riskAnalyticsKpis.map((kpi) => {
+      if (kpi.title === 'OVERALL RISK SCORE') {
+        return { ...kpi, value: `${riskScores.cri}/100` }
+      }
+
+      if (kpi.title === 'CRITICAL RISK ZONES') {
+        return { ...kpi, value: String(criticalZoneCount) }
+      }
+
+      return kpi
+    })
+  }, [backendConnected, riskScores, zones])
+
+  const liveRiskByZone = useMemo(
+    () =>
+      zones
+        .filter((zone) => zone.riskScore > 0)
+        .map((zone) => ({ zone: zone.name, value: zone.riskScore }))
+        .sort((a, b) => b.value - a.value),
+    [zones],
+  )
+
+  const riskByZoneActive =
+    backendConnected && liveRiskByZone.length > 0
+
   return (
     <>
-      <KpiGrid items={riskAnalyticsKpis} />
+      <KpiGrid items={liveRiskKpis} />
       <div className="grid gap-2.5 xl:grid-cols-12">
         <div className="xl:col-span-6">
           <Panel className="h-[290px] border-border/80 bg-card/80 p-3">
             <div className="mb-2 flex items-center justify-between">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">RISK TREND</div>
-                <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Last 7 days</div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Last 7 days</span>
+                  {riskTrendActive ? (
+                    <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-emerald-300">Live</span>
+                  ) : (
+                    <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">Sim</span>
+                  )}
+                </div>
               </div>
               <button type="button" className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground hover:text-foreground">Forecast</button>
             </div>
             <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={riskTrendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+                <LineChart data={riskTrendActive ? (liveRiskTrend ?? riskTrendData) : riskTrendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 4" stroke="#1f3147" vertical={false} />
                   <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#1f3147' }} />
                   <YAxis domain={[50, 90]} tick={{ fill: '#64748b', fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#1f3147' }} />
@@ -589,7 +660,7 @@ function RiskAnalyticsContent() {
             <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">RISK BY ZONE</div>
             <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={riskByZoneData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <BarChart data={riskByZoneActive ? liveRiskByZone : riskByZoneData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 4" stroke="#1f3147" vertical={false} />
                   <XAxis dataKey="zone" tick={{ fill: '#64748b', fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#1f3147' }} />
                   <YAxis tick={{ fill: '#64748b', fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#1f3147' }} />
@@ -684,7 +755,10 @@ function AlertAnalyticsContent() {
       <div className="grid gap-2.5 xl:grid-cols-12">
         <div className="xl:col-span-5">
           <Panel className="h-[290px] border-border/80 bg-card/80 p-3">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">ALERT VOLUME OVER TIME</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">ALERT VOLUME OVER TIME</div>
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">Sim</span>
+            </div>
             <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={alertVolumeData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
@@ -806,7 +880,10 @@ function PerformanceAnalyticsContent() {
       <div className="grid gap-2.5 xl:grid-cols-12">
         <div className="xl:col-span-4">
           <Panel className="h-[280px] border-border/80 bg-card/80 p-3">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">RESPONSE TIME TREND</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">RESPONSE TIME TREND</div>
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">Sim</span>
+            </div>
             <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={responseTrendData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
@@ -898,13 +975,33 @@ function PerformanceAnalyticsContent() {
 }
 
 function PredictiveInsightsContent() {
+  const backendConnected = usePlantStore(
+    (state) => state.backendConnected,
+  )
+  const forecast = usePlantStore((state) => state.forecast)
+
+  const liveRiskForecast = useMemo(
+    () =>
+      forecast.points.map((point) => ({
+        day: `${point.minute}m`,
+        predicted: point.risk,
+      })),
+    [forecast],
+  )
+
+  const riskForecastActive =
+    backendConnected && liveRiskForecast.length > 0
+
   return (
     <>
       <KpiGrid items={predictiveAnalyticsKpis} />
       <div className="grid gap-2.5 xl:grid-cols-12">
         <div className="xl:col-span-6">
           <Panel className="h-[290px] border-border/80 bg-card/80 p-3">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">INCIDENT FORECAST</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">INCIDENT FORECAST</div>
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">Sim</span>
+            </div>
             <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={incidentForecastData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
@@ -923,10 +1020,17 @@ function PredictiveInsightsContent() {
 
         <div className="xl:col-span-6">
           <Panel className="h-[290px] border-border/80 bg-card/80 p-3">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">RISK FORECAST</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400">RISK FORECAST</div>
+              {riskForecastActive ? (
+                <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-emerald-300">Live</span>
+              ) : (
+                <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">Sim</span>
+              )}
+            </div>
             <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={incidentForecastData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+                <LineChart data={riskForecastActive ? liveRiskForecast : incidentForecastData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 4" stroke="#1f3147" vertical={false} />
                   <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#1f3147' }} />
                   <YAxis tick={{ fill: '#64748b', fontSize: 8 }} tickLine={false} axisLine={{ stroke: '#1f3147' }} />
@@ -1022,6 +1126,8 @@ function PredictiveInsightsContent() {
 }
 
 export function AnalyticsInsightsLayout() {
+  usePlantSimulation(true)
+
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('Overview')
   const rightDate = useMemo(() => '10 May 2025 – 17 May 2025', [])
 

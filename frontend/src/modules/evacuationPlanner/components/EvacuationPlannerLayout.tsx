@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   AlertTriangle,
@@ -101,6 +101,20 @@ export function EvacuationPlannerLayout() {
   const backendConnected = usePlantStore(
     (state) => state.backendConnected,
   )
+  const isLoading = usePlantStore((state) => state.isLoading)
+  const backendError = usePlantStore((state) => state.backendError)
+  const initialize = usePlantStore((state) => state.initialize)
+
+  useEffect(() => {
+    const storeUnloaded =
+      zones.length === 0 &&
+      equipment.length === 0 &&
+      riskScores.cri === 0
+
+    if (!isLoading && !backendError && storeUnloaded) {
+      initialize()
+    }
+  }, [initialize, isLoading, backendError, zones, equipment, riskScores])
 
   const liveRiskZones = useMemo(
     () => buildLiveRiskZones(zones),
@@ -669,7 +683,12 @@ export function EvacuationPlannerLayout() {
 
             <div className="space-y-2 text-[10px]">
               <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
-                <span className="text-slate-400">Evacuated</span>
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  Evacuated
+                  <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">
+                    Sim
+                  </span>
+                </span>
 
                 <span className="font-bold text-emerald-300">
                   {evacuationState.evacuated}
@@ -677,7 +696,12 @@ export function EvacuationPlannerLayout() {
               </div>
 
               <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
-                <span className="text-slate-400">In Progress</span>
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  In Progress
+                  <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">
+                    Sim
+                  </span>
+                </span>
 
                 <span className="font-bold text-amber-300">
                   {evacuationState.inProgress}
@@ -685,15 +709,25 @@ export function EvacuationPlannerLayout() {
               </div>
 
               <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
-                <span className="text-slate-400">Remaining</span>
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  Remaining
+                  <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">
+                    Sim
+                  </span>
+                </span>
 
                 <span className="font-bold text-red-300">
                   {evacuationState.remaining}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between rounded border border-border/70 bg-background/30 px-2 py-1.5">
-                <span className="text-slate-400">Known Personnel</span>
+              <div className="flex items-center justify-between rounded border border-emerald-500/30 bg-emerald-500/5 px-2 py-1.5">
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  Known Personnel
+                  <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-emerald-300">
+                    Live
+                  </span>
+                </span>
 
                 <span className="font-bold text-cyan-300">
                   {overview.onSiteWorkers}
@@ -704,8 +738,14 @@ export function EvacuationPlannerLayout() {
 
           <Panel className="border-cyan-500/30 bg-slate-950/70 p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-300">
-                EVACUATION TIMELINE
+              <div className="flex items-center gap-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-300">
+                  EVACUATION TIMELINE
+                </div>
+
+                <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-[7px] font-bold uppercase tracking-[0.12em] text-amber-300">
+                  Sim
+                </span>
               </div>
 
               <button

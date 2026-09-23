@@ -6,8 +6,16 @@ import { ProfileMenu } from '@/components/common/ProfileMenu'
 import { RiskBadge } from '@/components/common/RiskBadge'
 import { SearchBox } from '@/components/common/SearchBox'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { riskLevelFromScore } from '@/data/plant/types'
+import { usePlantStore } from '@/store/usePlantStore'
 
 export function TopHeader({ activeModule }: { activeModule: string }) {
+  const riskScores = usePlantStore((state) => state.riskScores)
+  const backendConnected = usePlantStore((state) => state.backendConnected)
+
+  const riskLevel = riskLevelFromScore(riskScores.cri)
+  const badgeRiskLevel = riskLevel === 'safe' ? 'low' : riskLevel
+
   const now = new Date()
   const timeLabel = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -25,8 +33,11 @@ export function TopHeader({ activeModule }: { activeModule: string }) {
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground">SAFE AI</span>
           </div>
           <div className="hidden items-center gap-1.5 lg:flex">
-            <StatusBadge label="Plant Status: Online" variant="stable" />
-            <StatusBadge label="Current Shift: A" variant="active" />
+            <StatusBadge
+  label={`Plant Status: ${backendConnected ? 'Online' : 'Offline'}`}
+  variant={backendConnected ? 'stable' : 'active'}
+/>
+<StatusBadge label="Shift: A · SIM" variant="active" />
             <span className="max-w-52 truncate rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary">
               {activeModule}
             </span>
@@ -44,7 +55,7 @@ export function TopHeader({ activeModule }: { activeModule: string }) {
           <NotificationBell />
           <ProfileMenu />
           <div className="hidden md:block">
-            <RiskBadge level="critical" />
+            <RiskBadge level={badgeRiskLevel} />
           </div>
           <button
             type="button"
